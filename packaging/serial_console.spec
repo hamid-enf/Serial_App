@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for Serial Command Console.
+"""PyInstaller spec for the ENF Serial Command Console.
 
 Build from the repository root (or from packaging/ — the spec resolves paths
 either way):

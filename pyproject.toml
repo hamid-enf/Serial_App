@@ -5,11 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "serial-command-console"
 version = "1.0.0"
-description = "A professional serial terminal built around saved, one-click command buttons."
+description = "ENF Serial Command Console - a professional serial terminal built around saved, one-click command buttons."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "Serial Command Console contributors" }]
+authors = [{ name = "ENF" }]
+maintainers = [{ name = "ENF" }]
 keywords = ["serial", "uart", "terminal", "embedded", "rs232", "pyserial", "qt"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",

@@ -1,5 +1,5 @@
 ; ===================================================================
-;  Inno Setup script for Serial Command Console
+;  Inno Setup script for the ENF Serial Command Console
 ;
 ;  Compile after running the PyInstaller build:
 ;      packaging\build.bat /installer
@@ -11,9 +11,9 @@
 ;  on every launch. The single-file portable .exe is shipped separately.
 ; ===================================================================
 
-#define AppName        "Serial Command Console"
+#define AppName        "ENF Serial Command Console"
 #define AppVersion     "1.0.0"
-#define AppPublisher   "Serial Command Console"
+#define AppPublisher   "ENF"
 #define AppExeName     "SerialCommandConsole.exe"
 #define AppUrl         "https://github.com/hamid-enf/Serial_App"
 #define SourceDir      "dist\SerialCommandConsole"
@@ -24,6 +24,7 @@ AppName={#AppName}
 AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
 AppPublisher={#AppPublisher}
+AppCopyright=Copyright (c) 2026 ENF
 AppPublisherURL={#AppUrl}
 AppSupportURL={#AppUrl}/issues
 AppUpdatesURL={#AppUrl}/releases

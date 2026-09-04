@@ -5,6 +5,7 @@ from __future__ import annotations
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QStatusBar, QWidget
 
+from ... import SIGNATURE, WEBSITE
 from ...core.stats import format_bytes
 
 
@@ -65,6 +66,14 @@ class StatusBar(QStatusBar):
         self.message_label = QLabel("")
         self.message_label.setObjectName("HintLabel")
         layout.addWidget(self.message_label, 1)
+
+        layout.addWidget(_separator())
+        # Quiet authorship mark, right-aligned so it never competes with the
+        # live counters for attention.
+        self.signature_label = QLabel(SIGNATURE)
+        self.signature_label.setObjectName("SignatureLabel")
+        self.signature_label.setToolTip(f"{SIGNATURE} — {WEBSITE}")
+        layout.addWidget(self.signature_label)
 
         self.addPermanentWidget(container, 1)
 

@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import APP_NAME, __version__
+from .. import APP_NAME, AUTHOR, COPYRIGHT, WEBSITE, __version__
 from ..config.store import ConfigStore
 from ..core.codec import build_payload
 from ..core.commands import CommandStore
@@ -1098,7 +1098,11 @@ class MainWindow(QMainWindow):
             f"About {APP_NAME}",
             f"<h3>{APP_NAME} {__version__}</h3>"
             "<p>A serial terminal built around saved, one-click commands.</p>"
-            f"<p>Settings: <code>{self._config_store.path}</code></p>",
+            f"<p><b>Designed and built by {AUTHOR}.</b><br>"
+            f"<a href='{WEBSITE}'>{WEBSITE}</a></p>"
+            f"<p>Settings: <code>{self._config_store.path}</code></p>"
+            f"<p style='color:#8b95a5;'>{COPYRIGHT} — MIT Licence. "
+            "Built with PySide6 and pyserial.</p>",
         )
 
     # ==================================================================

@@ -18,13 +18,13 @@ VSVersionInfo(
       [
         StringTable(
           '040904B0',
-          [StringStruct('CompanyName', 'Serial Command Console'),
-           StringStruct('FileDescription', 'Serial Command Console - serial terminal with command buttons'),
+          [StringStruct('CompanyName', 'ENF'),
+           StringStruct('FileDescription', 'ENF Serial Command Console - serial terminal with command buttons'),
            StringStruct('FileVersion', '1.0.0.0'),
            StringStruct('InternalName', 'SerialCommandConsole'),
-           StringStruct('LegalCopyright', 'MIT Licence'),
+           StringStruct('LegalCopyright', 'Copyright (c) 2026 ENF - MIT Licence'),
            StringStruct('OriginalFilename', 'SerialCommandConsole.exe'),
-           StringStruct('ProductName', 'Serial Command Console'),
+           StringStruct('ProductName', 'ENF Serial Command Console'),
            StringStruct('ProductVersion', '1.0.0.0')])
       ]),
     VarFileInfo([VarStruct('Translation', [1033, 1200])])

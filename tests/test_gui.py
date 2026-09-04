@@ -13,7 +13,7 @@ import pytest
 
 pytest.importorskip("PySide6", reason="PySide6 is required for the GUI tests")
 
-from PySide6.QtCore import QCoreApplication
+from conftest import spin, spin_until
 from PySide6.QtWidgets import QApplication
 
 from serial_console.config.store import ConfigStore
@@ -26,33 +26,6 @@ from serial_console.services.serial_service import SerialService
 from serial_console.transport.loopback import LoopbackTransport
 
 pytestmark = pytest.mark.gui
-
-
-@pytest.fixture(scope="session")
-def qapp() -> QApplication:
-    app = QApplication.instance() or QApplication([])
-    assert isinstance(app, QApplication)
-    return app
-
-
-def spin(milliseconds: int = 120) -> None:
-    """Run the Qt event loop for a while so timers can fire."""
-    deadline = time.monotonic() + milliseconds / 1000.0
-    while time.monotonic() < deadline:
-        QCoreApplication.processEvents()
-        time.sleep(0.005)
-    QCoreApplication.processEvents()
-
-
-def spin_until(predicate, timeout_ms: int = 3000) -> bool:
-    deadline = time.monotonic() + timeout_ms / 1000.0
-    while time.monotonic() < deadline:
-        QCoreApplication.processEvents()
-        if predicate():
-            return True
-        time.sleep(0.005)
-    QCoreApplication.processEvents()
-    return predicate()
 
 
 @pytest.fixture()
@@ -243,21 +216,6 @@ class TestAutoSendScheduler:
 
 
 # ----------------------------------------------------------------------
-@pytest.fixture()
-def window(qapp: QApplication, tmp_path: Path):
-    from serial_console.ui.main_window import MainWindow
-
-    store = ConfigStore(tmp_path / "config.json")
-    config = AppConfig.create_default()
-    transport = LoopbackTransport(echo=True)
-    win = MainWindow(config, store, transport=transport)
-    win.resize(1200, 800)
-    yield win
-    win._service.shutdown()
-    win.deleteLater()
-    QCoreApplication.processEvents()
-
-
 class TestMainWindow:
     def test_constructs_with_all_panels(self, window) -> None:
         assert window.terminal is not None

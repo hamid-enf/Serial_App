@@ -1,16 +1,18 @@
-# Serial Command Console
+# ENF Serial Command Console
+
+<sub>An **ENF** project · MIT licensed · [github.com/hamid-enf/Serial_App](https://github.com/hamid-enf/Serial_App)</sub>
 
 A professional serial terminal for Windows (and Linux/macOS), built as a replacement for the
 Arduino IDE Serial Monitor. Its defining feature is a panel of **saved command buttons**: the
 commands you type ten times an hour become one-click buttons with their own name, payload,
 line ending and optional auto-repeat.
 
-![Serial Command Console — dark theme](docs/images/dark.png)
+![ENF Serial Command Console — dark theme](docs/images/dark.png)
 
 <details>
 <summary>Light theme</summary>
 
-![Serial Command Console — light theme](docs/images/light.png)
+![ENF Serial Command Console — light theme](docs/images/light.png)
 </details>
 
 ---
@@ -322,7 +324,9 @@ Serial_App/
 │   └── icons/                  # app icon (.ico/.png) and widget glyphs
 │
 ├── tests/                      # 278 tests, no hardware required
-├── scripts/screenshot.py       # regenerates the README images headlessly
+├── scripts/
+│   ├── screenshot.py           # regenerates the README images headlessly
+│   └── make_icon.py            # regenerates the ENF app icon (.ico + .png)
 ├── packaging/                  # PyInstaller spec, build.bat, build.ps1, installer.iss
 ├── docs/images/                # README screenshots
 └── .github/workflows/          # tests.yml (Linux+Windows) and build-windows.yml
@@ -549,9 +553,18 @@ Linux and macOS, only the Windows path is packaged and tested end-to-end.
 
 ---
 
-## Licence
+## Licence and credits
 
-MIT — see [LICENSE](LICENSE).
+Copyright © 2026 **ENF**. Released under the MIT licence — see [LICENSE](LICENSE).
 
 Built with [PySide6](https://doc.qt.io/qtforpython/) (LGPLv3) and
 [pyserial](https://github.com/pyserial/pyserial) (BSD-3-Clause).
+
+The ENF mark appears in the application's About box, the status bar, the window
+title, the Windows file properties of the executable and the installer's
+publisher field. The icon is generated from source — run
+`python scripts/make_icon.py` after editing it.
+
+---
+
+<div align="center"><sub><b>ENF</b> · engineered for people who send the same command a hundred times a day</sub></div>
