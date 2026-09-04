@@ -22,6 +22,7 @@ from ...config.paths import profiles_dir
 from ...core.logging_setup import get_logger
 from ...core.profiles import ProfileManager
 from ...models.errors import ValidationError
+from .._qt_compat import warn
 
 _log = get_logger(__name__)
 
@@ -264,7 +265,7 @@ class ProfileDialog(QDialog):
 
     # ------------------------------------------------------------------
     def _warn(self, message: str) -> None:
-        QMessageBox.warning(self, "Profiles", message)
+        warn(self, "Profiles", message)
 
 
 def _safe_filename(name: str) -> str:

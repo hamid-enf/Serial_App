@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QByteArray, QPoint, Qt, QTimer, Slot
+from PySide6.QtCore import QByteArray, QPoint, Qt, QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
@@ -37,6 +37,7 @@ from ..models.settings import AppConfig
 from ..services.autosend import AutoSendScheduler
 from ..services.serial_service import SerialService
 from ..transport.base import Transport
+from ._qt_compat import slot, warn
 from .dialogs import CommandEditorDialog, LogViewerDialog, ProfileDialog, SettingsDialog
 from .theme import apply_theme, theme_colors
 from .widgets import CommandPanel, ConnectionBar, SendPanel, StatusBar, TerminalView
@@ -356,11 +357,11 @@ class MainWindow(QMainWindow):
     def _store_geometry(self) -> None:
         try:
             self._config.appearance.window_geometry = bytes(
-                self.saveGeometry().toBase64()
+                self.saveGeometry().toBase64().data()
             ).decode("ascii")
-            self._config.appearance.window_state = bytes(self.saveState().toBase64()).decode(
-                "ascii"
-            )
+            self._config.appearance.window_state = bytes(
+                self.saveState().toBase64().data()
+            ).decode("ascii")
         except (ValueError, TypeError):  # pragma: no cover - defensive
             _log.debug("Window geometry could not be stored")
 
@@ -436,7 +437,7 @@ class MainWindow(QMainWindow):
     # ==================================================================
     # Connection
     # ==================================================================
-    @Slot()
+    @slot()
     def _on_connect(self) -> None:
         settings = self.connection_bar.to_settings(self._config.serial)
         try:
@@ -455,19 +456,19 @@ class MainWindow(QMainWindow):
         self._append_info(f"Opening {settings.describe()} …\n")
         self._service.connect_port(settings)
 
-    @Slot()
+    @slot()
     def _on_disconnect(self) -> None:
         self._autosend.stop_all()
         self._service.disconnect_port()
 
-    @Slot()
+    @slot()
     def _toggle_connection(self) -> None:
         if self._service.is_connected:
             self._on_disconnect()
         else:
             self._on_connect()
 
-    @Slot()
+    @slot()
     def _on_refresh_ports(self) -> None:
         if self._service.is_connected:
             self.status.set_message("Disconnect before re-scanning ports.")
@@ -479,7 +480,7 @@ class MainWindow(QMainWindow):
             else "No serial ports found."
         )
 
-    @Slot(object)
+    @slot(object)
     def _on_serial_connected(self, settings) -> None:
         colors = theme_colors(self._config.appearance.theme)
         self.connection_bar.set_connected(True, settings.describe(), colors["connected"])
@@ -490,7 +491,7 @@ class MainWindow(QMainWindow):
         self.status.set_message("Connected.")
         self.send_panel.focus_input()
 
-    @Slot(str)
+    @slot(str)
     def _on_serial_disconnected(self, reason: str) -> None:
         colors = theme_colors(self._config.appearance.theme)
         self._autosend.stop_all()
@@ -504,7 +505,7 @@ class MainWindow(QMainWindow):
         self._append_info(f"{readable}\n")
         self.status.set_message(readable)
 
-    @Slot(object)
+    @slot(object)
     def _on_serial_error(self, error: UserError) -> None:
         self._show_banner(error)
         self._append_error(f"{error.full_text()}\n")
@@ -512,20 +513,20 @@ class MainWindow(QMainWindow):
     # ==================================================================
     # Data flow
     # ==================================================================
-    @Slot(bytes)
+    @slot(bytes)
     def _on_data_received(self, data: bytes) -> None:
         self._stats.add_rx(len(data))
         chunks = self._buffer.append(Direction.RX, data)
         self.terminal.append_chunks(chunks)
 
-    @Slot(bytes)
+    @slot(bytes)
     def _on_data_sent(self, data: bytes) -> None:
         self._stats.add_tx(len(data))
         if self._config.terminal.echo_tx:
             chunks = self._buffer.append(Direction.TX, data)
             self.terminal.append_chunks(chunks)
 
-    @Slot(int)
+    @slot(int)
     def _on_overflow(self, dropped: int) -> None:
         self._stats.add_dropped(dropped)
         self._append_error(
@@ -544,7 +545,7 @@ class MainWindow(QMainWindow):
     # ==================================================================
     # Sending
     # ==================================================================
-    @Slot(str, bool, object)
+    @slot(str, bool, object)
     def _on_manual_send(self, text: str, hex_mode: bool, line_ending: LineEnding) -> None:
         try:
             payload = build_payload(text, hex_mode=hex_mode, line_ending=line_ending)
@@ -599,7 +600,7 @@ class MainWindow(QMainWindow):
             return False
         return self._service.send(payload)
 
-    @Slot(str)
+    @slot(str)
     def _on_command_button_send(self, button_id: str) -> None:
         try:
             button = self._commands.get(button_id)
@@ -616,7 +617,7 @@ class MainWindow(QMainWindow):
     # ==================================================================
     # Command button management
     # ==================================================================
-    @Slot()
+    @slot()
     def _on_add_command(self) -> None:
         try:
             button = self._commands.add()
@@ -628,7 +629,7 @@ class MainWindow(QMainWindow):
         self._mark_dirty()
         self._on_edit_command(button.id)
 
-    @Slot()
+    @slot()
     def _on_add_many_commands(self) -> None:
         count, ok = QInputDialog.getInt(
             self, "Add Command Buttons", "How many buttons should be added?", 10, 1, 200, 1
@@ -642,7 +643,7 @@ class MainWindow(QMainWindow):
         self.command_panel.rebuild()
         self._mark_dirty()
 
-    @Slot(str)
+    @slot(str)
     def _on_edit_command(self, button_id: str) -> None:
         try:
             button = self._commands.get(button_id)
@@ -667,7 +668,7 @@ class MainWindow(QMainWindow):
         if self._autosend.is_running(button.id):
             self._autosend.update_button(button)
 
-    @Slot(str, QPoint)
+    @slot(str, QPoint)
     def _on_command_context_menu(self, button_id: str, global_pos: QPoint) -> None:
         try:
             button = self._commands.get(button_id)
@@ -837,12 +838,12 @@ class MainWindow(QMainWindow):
                 )
             )
 
-    @Slot()
+    @slot()
     def _on_stop_all_autosend(self) -> None:
         self._autosend.stop_all()
         self.status.set_message("All auto-send jobs stopped.")
 
-    @Slot(str, int)
+    @slot(str, int)
     def _on_reorder_command(self, button_id: str, target_index: int) -> None:
         try:
             current = self._commands.index_of(button_id)
@@ -860,7 +861,7 @@ class MainWindow(QMainWindow):
         self.command_panel.scroll_to(button_id)
         self._mark_dirty()
 
-    @Slot(int)
+    @slot(int)
     def _on_columns_changed(self, columns: int) -> None:
         self._config.appearance.command_button_columns = columns
         self._mark_dirty()
@@ -872,7 +873,7 @@ class MainWindow(QMainWindow):
         pairs = [(p.id, p.name) for p in self._profiles.profiles]
         self.command_panel.set_profiles(pairs, self._config.active_profile_id)
 
-    @Slot(str)
+    @slot(str)
     def _on_profile_changed(self, profile_id: str) -> None:
         if profile_id == self._config.active_profile_id:
             return
@@ -893,7 +894,7 @@ class MainWindow(QMainWindow):
         self.status.set_message(f"Profile “{profile.name}” activated.")
         self._mark_dirty()
 
-    @Slot()
+    @slot()
     def _on_manage_profiles(self) -> None:
         dialog = ProfileDialog(self._profiles, self)
         dialog.exec()
@@ -917,23 +918,23 @@ class MainWindow(QMainWindow):
     # ==================================================================
     # Terminal actions
     # ==================================================================
-    @Slot()
+    @slot()
     def _on_clear_terminal(self) -> None:
         self._buffer.clear()
         self.terminal.clear()
         self.status.set_message("Receive pane cleared.")
 
-    @Slot()
+    @slot()
     def _on_clear_input(self) -> None:
         self.send_panel.clear_input()
         self.send_panel.focus_input()
 
-    @Slot()
+    @slot()
     def _on_copy_terminal(self) -> None:
         count = self.terminal.copy_to_clipboard()
         self.status.set_message(f"{format_bytes(count)} copied to the clipboard.")
 
-    @Slot()
+    @slot()
     def _on_terminal_display_changed(self) -> None:
         self._config.terminal.display_mode = self.terminal.display_mode
         self._config.terminal.show_timestamp = self.terminal.show_timestamp
@@ -944,17 +945,17 @@ class MainWindow(QMainWindow):
         self.terminal.apply_settings(self._config.terminal, self._config.appearance.theme)
         self._mark_dirty()
 
-    @Slot(object)
+    @slot(object)
     def _on_line_ending_changed(self, ending: LineEnding) -> None:
         self._config.terminal.line_ending = ending
         self.status.set_message(f"Line ending set to {ending.label}.")
         self._mark_dirty()
 
-    @Slot()
+    @slot()
     def _on_connection_settings_changed(self) -> None:
         self._mark_dirty()
 
-    @Slot()
+    @slot()
     def _on_save_log(self) -> None:
         default_name = time.strftime("serial-log-%Y%m%d-%H%M%S")
         path, selected_filter = QFileDialog.getSaveFileName(
@@ -998,7 +999,7 @@ class MainWindow(QMainWindow):
     # ==================================================================
     # Settings / appearance
     # ==================================================================
-    @Slot()
+    @slot()
     def _on_settings(self) -> None:
         self._sync_runtime_state_into_config()
         dialog = SettingsDialog(self._config, self)
@@ -1032,7 +1033,7 @@ class MainWindow(QMainWindow):
         self._flush_config()
         self.status.set_message("Settings applied.")
 
-    @Slot()
+    @slot()
     def _toggle_theme(self) -> None:
         theme = (
             Theme.LIGHT if self._config.appearance.theme is Theme.DARK else Theme.DARK
@@ -1062,11 +1063,11 @@ class MainWindow(QMainWindow):
     # ==================================================================
     # Help
     # ==================================================================
-    @Slot()
+    @slot()
     def _on_show_log(self) -> None:
         LogViewerDialog(self).exec()
 
-    @Slot()
+    @slot()
     def _on_show_shortcuts(self) -> None:
         QMessageBox.information(
             self,
@@ -1091,7 +1092,7 @@ class MainWindow(QMainWindow):
             "</table>",
         )
 
-    @Slot()
+    @slot()
     def _on_about(self) -> None:
         QMessageBox.about(
             self,
@@ -1119,7 +1120,7 @@ class MainWindow(QMainWindow):
             + (f"  ·  {self._stats.rate_text()}" if self._service.is_connected else "")
         )
 
-    @Slot()
+    @slot()
     def _on_reset_counters(self) -> None:
         self._stats.reset()
         self._service.reset_counters()
@@ -1159,7 +1160,7 @@ class MainWindow(QMainWindow):
             self._config_store.save(self._config, force=True)
         except ConfigError as exc:
             _log.error("Could not save settings on exit: %s", exc)
-            QMessageBox.warning(
+            warn(
                 self,
                 "Settings",
                 map_config_error(exc, str(self._config_store.path)).full_text(),

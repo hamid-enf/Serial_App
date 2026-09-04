@@ -83,8 +83,10 @@ class ConnectionBar(QWidget):
         self.baud_combo.setToolTip(
             "Baud rate. Any value supported by the driver can be typed in."
         )
-        self.baud_combo.addItems(str(rate) for rate in COMMON_BAUD_RATES)
-        self.baud_combo.lineEdit().setValidator(QIntValidator(MIN_BAUD, MAX_BAUD, self))
+        self.baud_combo.addItems([str(rate) for rate in COMMON_BAUD_RATES])
+        baud_edit = self.baud_combo.lineEdit()
+        if baud_edit is not None:
+            baud_edit.setValidator(QIntValidator(MIN_BAUD, MAX_BAUD, self))
         self.baud_combo.setCurrentText("115200")
         layout.addWidget(_labelled("Baud", self.baud_combo))
 

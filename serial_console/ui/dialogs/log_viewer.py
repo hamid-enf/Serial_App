@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -38,7 +38,9 @@ class LogViewerDialog(QDialog):
             f"Log file: {path}" if path else "File logging is not available in this session."
         )
         header.setObjectName("HintLabel")
-        header.setTextInteractionFlags(header.textInteractionFlags() | 1)  # selectable
+        header.setTextInteractionFlags(
+            header.textInteractionFlags() | Qt.TextInteractionFlag.TextSelectableByMouse
+        )
         header.setWordWrap(True)
         outer.addWidget(header)
 

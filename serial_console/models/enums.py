@@ -9,6 +9,11 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from enum import Enum
+from typing import TypeVar
+
+#: Bound to the concrete subclass so ``LineEnding.coerce(...)`` is typed as
+#: ``LineEnding`` rather than the private base class.
+_E = TypeVar("_E", bound="_LabelledEnum")
 
 
 class _LabelledEnum(Enum):
@@ -33,7 +38,7 @@ class _LabelledEnum(Enum):
         return str(self.value)
 
     @classmethod
-    def coerce(cls, value: object, default: _LabelledEnum) -> _LabelledEnum:
+    def coerce(cls: type[_E], value: object, default: _E) -> _E:
         """Return a member for ``value``, falling back to ``default``.
 
         Parsing is case insensitive and also accepts the human readable label,

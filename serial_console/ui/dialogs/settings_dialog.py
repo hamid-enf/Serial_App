@@ -96,8 +96,10 @@ class SettingsDialog(QDialog):
 
         self.baud_combo = QComboBox()
         self.baud_combo.setEditable(True)
-        self.baud_combo.addItems(str(rate) for rate in COMMON_BAUD_RATES)
-        self.baud_combo.lineEdit().setValidator(QIntValidator(MIN_BAUD, MAX_BAUD, self))
+        self.baud_combo.addItems([str(rate) for rate in COMMON_BAUD_RATES])
+        baud_edit = self.baud_combo.lineEdit()
+        if baud_edit is not None:
+            baud_edit.setValidator(QIntValidator(MIN_BAUD, MAX_BAUD, self))
         form.addRow("Baud Rate", self.baud_combo)
 
         self.data_bits_combo = _enum_combo(DataBits)

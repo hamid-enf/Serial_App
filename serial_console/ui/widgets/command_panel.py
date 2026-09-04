@@ -107,7 +107,7 @@ class _ButtonGrid(QWidget):
         if not data:
             event.ignore()
             return
-        button_id = bytes(data).decode("ascii", errors="ignore")
+        button_id = bytes(data.data()).decode("ascii", errors="ignore")
         index = self._insertion_index(event.position().toPoint())
         event.acceptProposedAction()
         self.dropRequested.emit(button_id, index)
@@ -250,13 +250,15 @@ class CommandPanel(QWidget):
         separator.setFixedHeight(1)
         outer.addWidget(separator)
 
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # Named scroll_area, not scroll: QWidget already has a scroll() method and
+# shadowing it on the Python side is a trap waiting to be sprung.
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.grid = _ButtonGrid()
         self.grid.dropRequested.connect(self.reorderRequested.emit)
-        self.scroll.setWidget(self.grid)
-        outer.addWidget(self.scroll, 1)
+        self.scroll_area.setWidget(self.grid)
+        outer.addWidget(self.scroll_area, 1)
 
     # ------------------------------------------------------------------
     # Population
@@ -322,7 +324,7 @@ class CommandPanel(QWidget):
     def scroll_to(self, button_id: str) -> None:
         widget = self._widgets.get(button_id)
         if widget is not None:
-            self.scroll.ensureWidgetVisible(widget, 20, 20)
+            self.scroll_area.ensureWidgetVisible(widget, 20, 20)
 
     # ------------------------------------------------------------------
     # Profiles / layout

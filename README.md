@@ -323,7 +323,7 @@ Serial_App/
 │   ├── themes/{dark,light}.qss
 │   └── icons/                  # app icon (.ico/.png) and widget glyphs
 │
-├── tests/                      # 278 tests, no hardware required
+├── tests/                      # 358 tests, no hardware required
 ├── scripts/
 │   ├── screenshot.py           # regenerates the README images headlessly
 │   └── make_icon.py            # regenerates the ENF app icon (.ico + .png)
@@ -408,10 +408,15 @@ Key decisions, and the reasoning behind them:
 
 ```bash
 pip install -r requirements-dev.txt
-pytest tests -q                                    # 278 tests, ~20 s
+pytest tests -q                                    # 358 tests, ~20 s
 pytest tests -q --cov=serial_console --cov-report=term-missing
 pytest tests -m "not gui" -q                       # skip the Qt tests
+
+ruff check serial_console tests main.py scripts    # lint
+mypy serial_console                                # types: clean, 48 files
 ```
+
+Line coverage of the non-UI code is **90%**; CI fails the build below 85%.
 
 No hardware is needed: `LoopbackTransport` is a virtual port that can echo, script responses
 and inject faults (`fail_on_open`, `fail_on_read`, `fail_on_write`) so every error path is
@@ -432,6 +437,10 @@ Coverage by area:
 | `test_buffers.py` | Aggregator ceiling and concurrency; buffer trimming, rendering, exports |
 | `test_errors.py` | The exact user-facing wording of every error, and that no traceback leaks |
 | `test_gui.py` | Service plumbing, auto-send, main-window behaviour, dialogs, a 1 MiB flood |
+| `test_transport.py` | Settings → pyserial kwargs, open/close/read/write, driver misbehaviour, port enumeration and natural sorting |
+| `test_paths_and_logging.py` | Every platform's data directory, portable mode, log rotation, read-only install |
+| `test_app.py` | CLI parsing, the excepthook, and a real headless boot via `--selftest` |
+| `test_branding.py` | The ENF marks in the UI, the version resource, the installer and the icon |
 
 ---
 
