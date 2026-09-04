@@ -1,0 +1,128 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "serial-command-console"
+version = "1.0.0"
+description = "A professional serial terminal built around saved, one-click command buttons."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Serial Command Console contributors" }]
+keywords = ["serial", "uart", "terminal", "embedded", "rs232", "pyserial", "qt"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: X11 Applications :: Qt",
+    "Environment :: Win32 (MS Windows)",
+    "Intended Audience :: Developers",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS :: MacOS X",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Communications",
+    "Topic :: Software Development :: Embedded Systems",
+    "Topic :: Terminals :: Serial",
+]
+dependencies = [
+    "PySide6-Essentials>=6.6,<7",
+    "pyserial>=3.5,<4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "pyinstaller>=6.6",
+    "ruff>=0.6",
+    "mypy>=1.10",
+]
+
+[project.gui-scripts]
+serial-command-console = "serial_console.app:main"
+
+[project.scripts]
+serial-console = "serial_console.app:main"
+
+[tool.setuptools]
+packages = [
+    "serial_console",
+    "serial_console.config",
+    "serial_console.core",
+    "serial_console.models",
+    "serial_console.services",
+    "serial_console.transport",
+    "serial_console.ui",
+    "serial_console.ui.dialogs",
+    "serial_console.ui.widgets",
+]
+
+[tool.setuptools.package-data]
+serial_console = ["py.typed"]
+
+# ----------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "gui: tests that require a QApplication (run with QT_QPA_PLATFORM=offscreen)",
+]
+filterwarnings = ["error::DeprecationWarning:serial_console.*"]
+
+[tool.coverage.run]
+source = ["serial_console"]
+omit = ["*/ui/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
+
+# ----------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = [".venv", "packaging/dist", "packaging/build"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "W",    # warnings
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # bugbear
+    "C4",   # comprehensions
+    "SIM",  # simplify
+    "RUF",
+]
+ignore = [
+    "N802",   # Qt overrides use camelCase by necessity
+    "N815",   # Qt signal attributes are camelCase by convention
+    "RUF001", # curly quotes are intentional in user-facing strings
+    "RUF002",
+    "RUF003",
+    "B008",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["N802", "E501", "RUF043", "B011"]
+"packaging/*.spec" = ["F821"]  # PyInstaller injects Analysis/PYZ/EXE/COLLECT
+
+[tool.ruff.lint.isort]
+known-first-party = ["serial_console"]
+
+# ----------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.10"
+warn_unused_configs = true
+ignore_missing_imports = true
+check_untyped_defs = true
+exclude = ["packaging/", "\\.venv/"]
