@@ -446,6 +446,15 @@ git tag v1.0.0 && git push origin v1.0.0
 The workflow also runs the test suite and executes the frozen binary with `--selftest`, so a
 missing hidden import or an unbundled resource fails the build instead of reaching a user.
 
+> **Enabling the workflows.** `.github/workflows/build-windows.yml` and `tests.yml` exist in the
+> working tree but are **not committed**: GitHub refuses any push that adds or edits a workflow
+> file unless the pushing credential holds the `workflows` permission, which the automation
+> account used here does not. To turn CI on, commit them from a clone you own:
+>
+> ```bash
+> git add .github/workflows && git commit -m "Add CI workflows" && git push
+> ```
+
 ### Option B — locally on Windows
 
 ```bat
