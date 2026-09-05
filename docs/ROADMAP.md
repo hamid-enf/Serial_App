@@ -1,6 +1,6 @@
 # Project status and roadmap
 
-**Last updated:** 2026-09-05 · **Branch:** `arena/01a06db5-serial-app` · **PR:** [#1](https://github.com/hamid-enf/Serial_App/pull/1)
+**Last updated:** 2026-09-05 · **Status:** 1.0.0 merged to `main` in [#1](https://github.com/hamid-enf/Serial_App/pull/1)
 
 This file is the handover note. It records what exists, what was measured, what
 was deliberately *not* done and why, and what is worth doing next — so that
