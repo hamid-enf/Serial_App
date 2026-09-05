@@ -16,6 +16,10 @@
 .PARAMETER Clean
     Delete the build virtual environment first.
 
+.PARAMETER UseVenv
+    Build inside the currently activated virtual environment instead of
+    creating packaging's own .build-venv.
+
 .EXAMPLE
     .\packaging\build.ps1
 .EXAMPLE
@@ -25,7 +29,8 @@
 param(
     [switch]$SkipTests,
     [switch]$Installer,
-    [switch]$Clean
+    [switch]$Clean,
+    [switch]$UseVenv
 )
 
 $ErrorActionPreference = 'Stop'
@@ -46,20 +51,51 @@ function Write-Step([string]$Text) {
 Push-Location $Root
 try {
     Write-Step '[1/5] Locating Python'
+    # The py launcher is tried last: it is frequently installed without any
+    # registered runtime (Microsoft Store installs, leftovers from an
+    # uninstall) and then fails with "No suitable Python runtime found" even
+    # though python.exe works perfectly well.
+    $candidates = @()
+    if ($env:VIRTUAL_ENV) {
+        $candidates += , @((Join-Path $env:VIRTUAL_ENV 'Scripts\python.exe'), @())
+    }
+    foreach ($name in @('python', 'python3')) {
+        $cmd = Get-Command $name -ErrorAction SilentlyContinue
+        if ($cmd) { $candidates += , @($cmd.Source, @()) }
+    }
+    $pyCmd = Get-Command 'py' -ErrorAction SilentlyContinue
+    if ($pyCmd) { $candidates += , @($pyCmd.Source, @('-3')) }
+    foreach ($ver in @('313', '312', '311', '310')) {
+        foreach ($base in @("$env:LOCALAPPDATA\Programs\Python", $env:ProgramFiles)) {
+            if ($base) { $candidates += , @((Join-Path $base "Python$ver\python.exe"), @()) }
+        }
+    }
+
     $python = $null
-    foreach ($candidate in @('py', 'python')) {
-        $cmd = Get-Command $candidate -ErrorAction SilentlyContinue
-        if ($cmd) {
-            $argsList = if ($candidate -eq 'py') { @('-3') } else { @() }
-            $version = & $cmd.Source @argsList -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>$null
-            if ($LASTEXITCODE -eq 0 -and [version]$version -ge [version]'3.10') {
-                $python = @($cmd.Source) + $argsList
-                break
-            }
+    $version = $null
+    foreach ($candidate in $candidates) {
+        $exe, $extra = $candidate
+        if (-not (Test-Path $exe -ErrorAction SilentlyContinue) -and
+            -not (Get-Command $exe -ErrorAction SilentlyContinue)) { continue }
+        $reported = & $exe @extra -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>$null
+        if ($LASTEXITCODE -eq 0 -and $reported -and [version]$reported -ge [version]'3.10') {
+            $python = @($exe) + $extra
+            $version = $reported
+            break
         }
     }
     if (-not $python) {
-        throw 'Python 3.10 or newer was not found on PATH. Install it from https://www.python.org/downloads/windows/'
+        throw @'
+No Python 3.10 or newer could be found.
+
+  Tried: the active virtual environment, python, python3, py -3 and the
+         default install locations.
+
+  Fixes:
+    * Install Python from https://www.python.org/downloads/windows/ and tick
+      "Add python.exe to PATH" during setup.
+    * Inside an activated venv, run: .\packaging\build.ps1 -UseVenv
+'@
     }
     Write-Host ("Using {0} (Python {1})" -f $python[0], $version)
 
@@ -79,8 +115,11 @@ try {
         Write-Host 'Skipped (-SkipTests).' -ForegroundColor Yellow
     }
     else {
+        $env:QT_QPA_PLATFORM = 'offscreen'
         & $venvPython -m pytest tests -q
-        if ($LASTEXITCODE -ne 0) { throw 'Tests failed - build aborted.' }
+        $testExit = $LASTEXITCODE
+        Remove-Item Env:\QT_QPA_PLATFORM -ErrorAction SilentlyContinue
+        if ($testExit -ne 0) { throw 'Tests failed - build aborted. Re-run with -SkipTests to build anyway.' }
     }
 
     Write-Step '[4/5] Freezing with PyInstaller'
@@ -90,6 +129,10 @@ try {
     & $venvPython -m PyInstaller (Join-Path $ScriptDir 'serial_console.spec') `
         --noconfirm --distpath $DistDir --workpath $WorkDir
     if ($LASTEXITCODE -ne 0) { throw 'PyInstaller failed.' }
+
+    Write-Host 'Verifying the frozen application ...'
+    & (Join-Path $DistDir 'SerialCommandConsole\SerialCommandConsole.exe') --selftest
+    if ($LASTEXITCODE -ne 0) { throw 'The frozen application failed its self-test.' }
 
     Write-Step '[5/5] Installer'
     if ($Installer) {

@@ -473,7 +473,9 @@ missing hidden import or an unbundled resource fails the build instead of reachi
 ```bat
 packaging\build.bat                 :: venv + tests + freeze
 packaging\build.bat /installer      :: also compile the Inno Setup installer
-packaging\build.bat /skiptests
+packaging\build.bat /skiptests      :: skip pytest
+packaging\build.bat /usevenv        :: build inside the venv you already activated
+packaging\build.bat /clean          :: recreate .build-venv from scratch
 ```
 
 or, in PowerShell:
@@ -482,10 +484,20 @@ or, in PowerShell:
 .\packaging\build.ps1
 .\packaging\build.ps1 -Installer
 .\packaging\build.ps1 -SkipTests -Clean
+.\packaging\build.ps1 -UseVenv
 ```
 
-Prerequisites: Python 3.10+ on `PATH`, and [Inno Setup 6](https://jrsoftware.org/isdl.php) if
-you want the installer. Output:
+The scripts look for an interpreter in this order: the **currently activated virtual
+environment**, `python`, `python3`, `py -3`, then the default install locations. The `py`
+launcher is deliberately tried *last* — it is often present with no registered runtime (a
+Microsoft Store install, or a leftover from an uninstall) and then fails with *"No suitable
+Python runtime found"* even though `python.exe` works perfectly well.
+
+After freezing, the script runs the new executable with `--selftest`, so a missing data file
+or hidden import fails the build instead of reaching a user.
+
+Prerequisites: Python 3.10+ reachable by one of the routes above, and
+[Inno Setup 6](https://jrsoftware.org/isdl.php) if you want the installer. Output:
 
 | Artefact | Path |
 | --- | --- |
@@ -527,6 +539,7 @@ space.
 | Output stops scrolling | Auto-scroll pauses when you scroll up. Press `Ctrl+Shift+A` or scroll back to the bottom. |
 | A flood of data makes the display lag | Lower the buffer limit in Settings → Terminal, or turn off timestamps; the connection itself is never affected. |
 | SmartScreen blocks the download | The binary is unsigned. *More info → Run anyway*, or build it yourself with `packaging\build.bat`. |
+| `build.bat` says *"No suitable Python runtime found"* | The `py` launcher has no registered runtime. Recent versions of the script fall back to `python`; if you are inside an activated venv, `packaging\build.bat /usevenv` uses it directly. |
 | Settings did not survive a restart | The app was killed before its debounced autosave; settings also flush on close. Check `logs/` for write errors — a read-only `%APPDATA%` is reported in a banner. |
 
 ---
