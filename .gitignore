@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.Python
+build/
+dist/
+develop-eggs/
+pip-wheel-metadata/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Test / type-check caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# PyInstaller output
+packaging/build/
+packaging/dist/
+packaging/*.spec.bak
+*.manifest
+
+# Inno Setup output
+packaging/installer_output/
+
+# Local application data (never commit a user's ports/commands)
+config.json
+config.json.bak
+config.corrupt-*.json
+*.log
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Promo render scratch directory (published copies live in docs/promo/)
+/promo/

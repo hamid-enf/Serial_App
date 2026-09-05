@@ -1,0 +1,76 @@
+name: Bug report
+description: Something works differently than it should
+title: "[Bug] "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. The log file (**Help → Open log folder**) usually
+        contains the answer, so please attach it if you can.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what did you get instead?
+      placeholder: I pressed Connect on COM5 and the window stopped responding for ~10 seconds.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Application version
+      description: Help → About, or `SerialCommandConsole.exe --version`
+      placeholder: 1.0.0
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows 11
+        - Windows 10
+        - Linux
+        - macOS
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install it?
+      options:
+        - Portable .exe
+        - Installer (Inno Setup)
+        - From source (python main.py)
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device and USB-serial chip
+      placeholder: ESP32-WROOM-32 · CP2102 · 115200 8N1
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log output
+      description: From Help → Open log folder. Secrets, if any, can be redacted.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched the existing issues.
+          required: true
+        - label: I can reproduce this with a fresh configuration (rename config.json and restart).

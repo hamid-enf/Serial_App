@@ -1,0 +1,7 @@
+# Runtime dependencies for Serial Command Console.
+#
+# PySide6-Essentials rather than the full PySide6: it drops QtWebEngine,
+# Qt3D, Multimedia and friends, which this application never touches and
+# which roughly triple the size of the frozen executable.
+PySide6-Essentials>=6.6,<7
+pyserial>=3.5,<4

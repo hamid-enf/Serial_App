@@ -1,0 +1,8 @@
+# Development and build tooling.
+-r requirements.txt
+
+pytest>=8.0
+pytest-cov>=5.0
+pyinstaller>=6.6
+ruff>=0.6
+mypy>=1.10

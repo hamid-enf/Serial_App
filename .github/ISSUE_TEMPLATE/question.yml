@@ -1,0 +1,23 @@
+name: Question or help
+description: Ask how to do something
+title: "[Question] "
+labels: ["question"]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: What are you trying to do?
+    validations:
+      required: true
+  - type: input
+    id: setup
+    attributes:
+      label: Your setup
+      placeholder: Windows 11 · Arduino Uno · CH340 · 9600 8N1
+  - type: markdown
+    attributes:
+      value: |
+        Two things solve most questions:
+        **line ending** (Arduino `readStringUntil('\n')` needs **LF**, most AT
+        modules need **CRLF**) and **baud rate** (garbled output means a
+        mismatch).
