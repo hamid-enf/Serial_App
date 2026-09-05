@@ -43,6 +43,7 @@ same folder). Every frame is the real application, rendered from the source by
 - [Architecture](#architecture)
 - [Staying fast in a long session](#staying-fast-in-a-long-session)
 - [Unicode, Persian and fonts](#unicode-persian-and-fonts)
+- [Building the Windows executable](#building-the-windows-executable) · [full manual](docs/BUILD.md)
 - [Roadmap and project status](docs/ROADMAP.md)
 - [Testing](#testing)
 - [Building the Windows executable](#building-the-windows-executable)
@@ -588,83 +589,80 @@ Coverage by area:
 
 ## Building the Windows executable
 
-### Option A — GitHub Actions (recommended)
+> **Full manual with every route and every error message:
+> [`docs/BUILD.md`](docs/BUILD.md).** This is the short version.
 
-`.github/workflows/build-windows.yml` runs on `windows-latest` for every push and produces the
-portable `.exe`, the zipped folder build and the Inno Setup installer as downloadable artifacts.
-Push a `v*` tag and the same three files are attached to a GitHub release:
+On a Windows machine with Python 3.10+ installed:
+
+```bat
+git clone https://github.com/hamid-enf/Serial_App.git
+cd Serial_App
+packaging\build.bat /installer
+```
+
+The script creates its own virtual environment, installs the dependencies, runs the 411
+tests, freezes the application and then executes the result with `--selftest` — so a
+missing hidden import or an unbundled resource fails the build instead of reaching a
+user. Nothing outside the repository is modified.
+
+| Flag | Effect |
+| --- | --- |
+| `/installer` | Also compile the Inno Setup installer (needs [Inno Setup 6](https://jrsoftware.org/isdl.php)) |
+| `/skiptests` | Skip `pytest` |
+| `/usevenv` | Build inside the virtual environment you already activated |
+| `/clean` | Delete `.build-venv` first |
+
+PowerShell equivalent: `.\packaging\build.ps1 -Installer` (`-SkipTests`, `-UseVenv`,
+`-Clean`).
+
+### Output
+
+| Artefact | Path | Use it when |
+| --- | --- | --- |
+| Portable single file | `packaging\dist\SerialCommandConsole-portable.exe` | One file to copy or send; ~1–3 s slower to start |
+| Folder build | `packaging\dist\SerialCommandConsole\SerialCommandConsole.exe` | Fastest startup; ship the whole folder |
+| Installer | `packaging\installer_output\SerialCommandConsole-1.0.0-setup.exe` | Start-menu entry, desktop icon, uninstaller |
+
+### Without a Windows machine
+
+PyInstaller cannot cross-compile, so use the GitHub Actions workflow: it runs on
+`windows-latest`, builds all three artefacts and uploads them, and attaches them to a
+release when you push a `v*` tag.
 
 ```bash
 git tag v1.0.0 && git push origin v1.0.0
 ```
 
-The workflow also runs the test suite and executes the frozen binary with `--selftest`, so a
-missing hidden import or an unbundled resource fails the build instead of reaching a user.
-
-> **Enabling the workflows.** `.github/workflows/build-windows.yml` and `tests.yml` exist in the
-> working tree but are **not committed**: GitHub refuses any push that adds or edits a workflow
-> file unless the pushing credential holds the `workflows` permission, which the automation
-> account used here does not. To turn CI on, commit them from a clone you own:
+> **The workflows are not active yet.** They ship in
+> [`packaging/ci/`](packaging/ci/) rather than `.github/workflows/`, because GitHub
+> refuses workflow files pushed by an automation account without the `workflows`
+> permission. One command from your own clone turns them on:
 >
 > ```bash
-> git add .github/workflows && git commit -m "Add CI workflows" && git push
+> mkdir -p .github/workflows
+> git mv packaging/ci/build-windows.yml packaging/ci/tests.yml .github/workflows/
+> git commit -m "Enable CI workflows" && git push
 > ```
 
-### Option B — locally on Windows
+### By hand
 
 ```bat
-packaging\build.bat                 :: venv + tests + freeze
-packaging\build.bat /installer      :: also compile the Inno Setup installer
-packaging\build.bat /skiptests      :: skip pytest
-packaging\build.bat /usevenv        :: build inside the venv you already activated
-packaging\build.bat /clean          :: recreate .build-venv from scratch
-```
-
-or, in PowerShell:
-
-```powershell
-.\packaging\build.ps1
-.\packaging\build.ps1 -Installer
-.\packaging\build.ps1 -SkipTests -Clean
-.\packaging\build.ps1 -UseVenv
-```
-
-The scripts look for an interpreter in this order: the **currently activated virtual
-environment**, `python`, `python3`, `py -3`, then the default install locations. The `py`
-launcher is deliberately tried *last* — it is often present with no registered runtime (a
-Microsoft Store install, or a leftover from an uninstall) and then fails with *"No suitable
-Python runtime found"* even though `python.exe` works perfectly well.
-
-After freezing, the script runs the new executable with `--selftest`, so a missing data file
-or hidden import fails the build instead of reaching a user.
-
-Prerequisites: Python 3.10+ reachable by one of the routes above, and
-[Inno Setup 6](https://jrsoftware.org/isdl.php) if you want the installer. Output:
-
-| Artefact | Path |
-| --- | --- |
-| Portable single file | `packaging\dist\SerialCommandConsole-portable.exe` |
-| Folder build | `packaging\dist\SerialCommandConsole\SerialCommandConsole.exe` |
-| Installer | `packaging\installer_output\SerialCommandConsole-1.0.0-setup.exe` |
-
-### Option C — PyInstaller by hand
-
-```bash
+python -m venv .venv && .venv\Scripts\activate
 pip install -r requirements-dev.txt
-pyinstaller packaging/serial_console.spec --noconfirm \
-    --distpath packaging/dist --workpath packaging/build
+pyinstaller packaging\serial_console.spec --noconfirm ^
+    --distpath packaging\dist --workpath packaging\build
+packaging\dist\SerialCommandConsole\SerialCommandConsole.exe --selftest
 ```
 
-The spec excludes QtWebEngine, Quick, Multimedia, 3D and friends (roughly 120 MB → ~45 MB),
-declares pyserial's dynamically-imported Windows backend as a hidden import, bundles
-`resources/`, embeds the icon and Windows version metadata, and deliberately leaves UPX off
-because compressed binaries trip antivirus heuristics far more often than they save meaningful
-space.
+`SERIAL_CONSOLE_ONEFILE=0` builds only the folder variant.
 
-> **Why no `.exe` is committed to this repository.** The application was developed on Linux and
-> PyInstaller cannot cross-compile — freezing a Windows binary requires a Windows machine with
-> the Windows CPython runtime. The CI workflow provides that machine, which is why it is the
-> supported path to a binary rather than a convenience.
+### The SmartScreen warning
+
+The executable is unsigned, so Windows shows *“Windows protected your PC”* on first run:
+**More info → Run anyway**. The only real fix is an OV/EV code-signing certificate.
+[`docs/BUILD.md`](docs/BUILD.md#troubleshooting) covers this and sixteen other failure
+modes — antivirus false positives, `ModuleNotFoundError` in the frozen build, missing Qt
+platform plugins, long paths, stale build environments and the rest.
 
 ---
 

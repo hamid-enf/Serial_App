@@ -2,7 +2,8 @@
 
 > Looking for something to work on, or picking the project up after a break?
 > [`docs/ROADMAP.md`](docs/ROADMAP.md) records what has been measured, what was
-> tried and rejected, and what is worth doing next.
+> tried and rejected, and what is worth doing next. Building the Windows
+> executable is covered end to end in [`docs/BUILD.md`](docs/BUILD.md).
 
 Thanks for taking the time to look at this project. Bug reports, ideas and pull
 requests are all welcome.

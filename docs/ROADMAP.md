@@ -21,7 +21,7 @@ is in a releasable state.
 | Static checks | `ruff check` and `mypy serial_console` both clean |
 | Packaging | `packaging/` — PyInstaller spec, `build.bat`, `build.ps1`, Inno Setup script, Windows version resource |
 | CI | Written, **staged in `packaging/ci/`** — see §5.1 |
-| Docs | `README.md` (full manual), `CHANGELOG.md`, `CONTRIBUTING.md`, `docs/images/`, `docs/promo/` |
+| Docs | `README.md` (full manual), [`docs/BUILD.md`](BUILD.md) (building the .exe, with troubleshooting), `CHANGELOG.md`, `CONTRIBUTING.md`, `docs/images/`, `docs/promo/` |
 | Promo | 57-second clip, 16:9 and 9:16, Persian voiceover, in `docs/promo/` |
 
 Nothing in the specification is outstanding. Everything below is *improvement*,

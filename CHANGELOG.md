@@ -68,6 +68,13 @@ the project uses [semantic versioning](https://semver.org/).
   Qt-free adaptive limits, with 13 unit tests of their own.
 - README: [Staying fast in a long session](README.md#staying-fast-in-a-long-session),
   with the measured numbers.
+- [`docs/BUILD.md`](docs/BUILD.md) — the complete build manual: four routes to an
+  executable (batch script, PowerShell, PyInstaller by hand, GitHub Actions), what each
+  artefact is for, how to verify a build, and sixteen documented failure modes with
+  their fixes.
+- [`docs/ROADMAP.md`](docs/ROADMAP.md) — project status, every measurement taken, the
+  optimisations that were tried and rejected, and a ranked list of what to do next,
+  cross-linked with issues #2–#11.
 
 ### Fixed
 

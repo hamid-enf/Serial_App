@@ -1,5 +1,7 @@
 # CI workflows (staged here, not yet active)
 
+> Building the executable locally instead? See [`docs/BUILD.md`](../../docs/BUILD.md).
+
 These two workflow files are ready to use but live outside `.github/workflows/`,
 because the automated account that authored them is not allowed to create or
 update workflow files — GitHub rejects such a push with:
