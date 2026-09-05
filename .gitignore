@@ -45,5 +45,5 @@ config.corrupt-*.json
 .DS_Store
 Thumbs.db
 
-# Promotional render output (large binaries live outside Git)
+# Promo render scratch directory (published copies live in docs/promo/)
 /promo/

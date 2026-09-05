@@ -17,6 +17,11 @@ line ending and optional auto-repeat.
 
 ![ENF Serial Command Console — dark theme](docs/images/dark.png)
 
+**▶ Watch the 57-second tour:** [`docs/promo/enf-serial-console-16x9.mp4`](docs/promo/enf-serial-console-16x9.mp4)
+(GitHub plays it inline · Persian narration · a vertical cut for phones is in the
+same folder). Every frame is the real application, rendered from the source by
+[`scripts/promo`](scripts/promo).
+
 <details>
 <summary>Light theme</summary>
 
