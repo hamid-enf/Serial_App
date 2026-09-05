@@ -54,6 +54,15 @@ QLabel#HintLabel {
     font-size: 11px;
 }
 
+QLabel#WarningLabel {
+    color: #8a6100;
+    background: rgba(212, 163, 46, 0.14);
+    border: 1px solid rgba(212, 163, 46, 0.38);
+    border-radius: 4px;
+    font-size: 11px;
+    padding: 1px 7px;
+}
+
 QLabel#SignatureLabel {
     color: #8b95a5;
     font-size: 10px;

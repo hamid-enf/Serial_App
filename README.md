@@ -41,6 +41,7 @@ same folder). Every frame is the real application, rendered from the source by
 - [Configuration and data locations](#configuration-and-data-locations)
 - [Project structure](#project-structure)
 - [Architecture](#architecture)
+- [Staying fast in a long session](#staying-fast-in-a-long-session)
 - [Testing](#testing)
 - [Building the Windows executable](#building-the-windows-executable)
 - [Troubleshooting](#troubleshooting)
@@ -409,6 +410,8 @@ Key decisions, and the reasoning behind them:
   bytes, timestamp)` chunks, so switching to hex, toggling timestamps or exporting to CSV
   re-renders from real data rather than scraping the widget. Two independent flood guards apply:
   a byte budget (your 1–50 MB setting) and a hard block cap on the widget itself.
+- **The display adapts; the capture never does.** Keeping every byte is cheap, drawing every byte
+  is not, so the two are decoupled. See [Staying fast in a long session](#staying-fast-in-a-long-session).
 - **Exactly one `CLOSED` event.** A cable pulled out while the user clicks Disconnect is a real
   race; the worker and `stop()` both try to end the session and an atomic flag decides which one
   emits the event, so the UI can never double-handle a disconnect.
@@ -418,11 +421,66 @@ Key decisions, and the reasoning behind them:
 
 ---
 
+## Staying fast in a long session
+
+A serial terminal is judged on how it behaves in hour three, with a hundred megabytes
+behind it — not on how it opens. Three rules keep the application responsive, and all
+three protect *pixels* only: the buffer, the exports and the byte counters are always
+complete.
+
+**1. Rendering can never take more than its share of the UI thread.**
+Every display update measures itself — the text insertion *and* the repaint it triggers.
+If updates get expensive (a slower machine, a bigger window, Hex+ASCII mode, an absurd
+baud rate) the receive pane asks the serial service to hand it larger batches, less
+often, until drawing costs at most ~30 % of wall-clock time. Fewer, larger updates cost
+less in total than many small ones, so the log keeps up while typing, clicking and
+scrolling stay instant. The refresh moves between 30 fps and 5 fps on its own; nothing
+to configure.
+
+**2. One frame can never render more than one frame's worth of text.**
+The pane measures how many bytes per millisecond it can actually insert and derives a
+per-frame allowance from it. Anything beyond the allowance is skipped — including
+*inside* a single oversized chunk — and an amber `display limited · N MB not shown`
+badge appears next to **RECEIVE** while it lasts. Those bytes are still buffered, still
+exported, and still there when you toggle a display setting (which re-renders from the
+buffer). The floor is 4 KB per frame, which is ~10× more than 921600 baud produces, so
+this never engages at real serial rates.
+
+**3. Work nobody can see is not done.**
+Minimise the window and the pane stops rendering entirely, replaying the buffer when you
+come back. An idle connection drops its poll timer from 33 ms to 150 ms, so a connected
+but silent port costs almost no CPU (and no battery). Both revert on the first byte.
+
+Measured with `scripts/bench_terminal.py`, which simulates a session of a given length
+at a given data rate and reports the share of the UI thread spent on the log:
+
+```bash
+python scripts/bench_terminal.py --baud 115200 --seconds 60     # the pane alone
+python scripts/bench_terminal.py --rate 250000 --window         # the whole window
+python scripts/bench_terminal.py --rate 250000 --slow 6         # simulate a slow PC
+```
+
+| Scenario (60 s session) | UI thread spent on the log | Frame cost, first → last sixth |
+| --- | --- | --- |
+| 115200 baud | 9.7 % | 3.16 → 3.22 ms (×1.02) |
+| 921600 baud | 12.7 % | 3.89 → 4.35 ms (×1.12) |
+| 2 Mbit/s (250 kB/s) | 16.3 % | 4.81 → 5.43 ms (×1.13) |
+| 2 Mbit/s, Hex+ASCII | 36.3 % | 10.70 → 13.95 ms (×1.30) |
+| 8 Mbit/s (1 MB/s) | 32.2 % | 9.95 → 10.75 ms (×1.08) |
+| 2 Mbit/s on a 6× slower machine | 37.3 % (was 51 %) | 12.77 → 14.69 ms (×1.15) |
+
+The last row is the one that matters: without the adaptive refresh the same machine
+spends half its time drawing and the worst frame doubles. The cost stays flat as the
+session grows, which is the whole point — a session that has been running for an hour
+renders no slower than one that started a minute ago.
+
+---
+
 ## Testing
 
 ```bash
 pip install -r requirements-dev.txt
-pytest tests -q                                    # 358 tests, ~20 s
+pytest tests -q                                    # 387 tests, ~22 s
 pytest tests -q --cov=serial_console --cov-report=term-missing
 pytest tests -m "not gui" -q                       # skip the Qt tests
 
@@ -449,6 +507,7 @@ Coverage by area:
 | `test_serial_settings.py` | Validation and the full mapping to pyserial constants |
 | `test_serial_worker.py` | Lifecycle, a 1 MiB burst arriving intact, back-pressure, fault paths |
 | `test_buffers.py` | Aggregator ceiling and concurrency; buffer trimming, rendering, exports |
+| `test_render_budget.py` | The adaptive frame budget and refresh governor, at every extreme |
 | `test_errors.py` | The exact user-facing wording of every error, and that no traceback leaks |
 | `test_gui.py` | Service plumbing, auto-send, main-window behaviour, dialogs, a 1 MiB flood |
 | `test_transport.py` | Settings → pyserial kwargs, open/close/read/write, driver misbehaviour, port enumeration and natural sorting |
@@ -551,7 +610,7 @@ space.
 | Device ignores your commands | Wrong line ending. Most AT firmwares need **CRLF**; most Arduino sketches need **LF**. |
 | Permission denied on Linux | `sudo usermod -a -G dialout $USER`, then log out and back in. |
 | Output stops scrolling | Auto-scroll pauses when you scroll up. Press `Ctrl+Shift+A` or scroll back to the bottom. |
-| A flood of data makes the display lag | Lower the buffer limit in Settings → Terminal, or turn off timestamps; the connection itself is never affected. |
+| A flood of data makes the display lag | It should not: the pane limits itself and shows `display limited · N MB not shown` instead. If it still feels slow, switch from Hex+ASCII to ASCII, or turn timestamps off. The connection and the capture are never affected. |
 | SmartScreen blocks the download | The binary is unsigned. *More info → Run anyway*, or build it yourself with `packaging\build.bat`. |
 | `build.bat` says *"No suitable Python runtime found"* | The `py` launcher has no registered runtime. Recent versions of the script fall back to `python`; if you are inside an activated venv, `packaging\build.bat /usevenv` uses it directly. |
 | Settings did not survive a restart | The app was killed before its debounced autosave; settings also flush on close. Check `logs/` for write errors — a read-only `%APPDATA%` is reported in a banner. |

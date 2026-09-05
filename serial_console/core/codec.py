@@ -20,6 +20,11 @@ _HEX_PREFIX = re.compile(r"^0[xX]")
 #: Characters rendered verbatim in the ASCII column of a hex dump.
 _PRINTABLE = set(string.printable) - set("\t\n\r\x0b\x0c")
 
+#: 256-entry translation table for the ASCII column: printable bytes map to
+#: themselves, everything else to ``.``.  Built once so the dump loop can use
+#: :meth:`bytes.translate` instead of a per-byte Python comprehension.
+_ASCII_TABLE = bytes(b if chr(b) in _PRINTABLE else 0x2E for b in range(256))
+
 
 def parse_hex(text: str) -> bytes:
     """Parse a permissive hex string into bytes.
@@ -53,8 +58,19 @@ def parse_hex(text: str) -> bytes:
 
 
 def format_hex(data: bytes, *, uppercase: bool = True, separator: str = " ") -> str:
-    """Render ``data`` as ``48 65 6C 6C 6F``."""
-    text = separator.join(f"{byte:02x}" for byte in data)
+    """Render ``data`` as ``48 65 6C 6C 6F``.
+
+    This runs on every received byte in Hex display mode, so it delegates to
+    :meth:`bytes.hex`, which formats in C. The obvious Python version
+    (``separator.join(f"{b:02x}" for b in data)``) is ~30× slower and was
+    costing whole milliseconds per frame at high baud rates.
+    """
+    if not data:
+        return ""
+    if len(separator) == 1:
+        text = data.hex(separator)
+    else:  # pragma: no cover - only reachable through a custom separator
+        text = separator.join(data.hex()[i : i + 2] for i in range(0, len(data) * 2, 2))
     return text.upper() if uppercase else text
 
 
@@ -63,21 +79,36 @@ def format_hex_dump(data: bytes, *, bytes_per_line: int = 16, uppercase: bool = 
 
     The offset column is intentionally omitted: in a streaming terminal the
     offset resets are meaningless and just add noise.
+
+    Both halves of every line are produced by C-level primitives
+    (:meth:`bytes.hex` and :meth:`bytes.translate`); at 16 bytes per line this
+    is the single most expensive display mode, so the inner loop does no
+    per-byte Python work at all.
     """
     if bytes_per_line <= 0:
         bytes_per_line = 16
+    if not data:
+        return ""
+    width = bytes_per_line * 3 - 1
     lines: list[str] = []
     for start in range(0, len(data), bytes_per_line):
-        chunk = data[start : start + bytes_per_line]
-        hex_part = format_hex(chunk, uppercase=uppercase)
-        pad = "   " * (bytes_per_line - len(chunk))
-        lines.append(f"{hex_part}{pad}  |{to_printable_ascii(chunk)}|")
+        piece = data[start : start + bytes_per_line]
+        hex_part = piece.hex(" ")
+        if uppercase:
+            hex_part = hex_part.upper()
+        ascii_part = piece.translate(_ASCII_TABLE).decode("ascii")
+        lines.append(f"{hex_part:<{width}}  |{ascii_part}|")
     return "\n".join(lines)
 
 
 def to_printable_ascii(data: bytes, placeholder: str = ".") -> str:
     """Map bytes to printable ASCII, replacing control bytes with ``.``."""
-    return "".join(chr(b) if chr(b) in _PRINTABLE else placeholder for b in data)
+    if placeholder == ".":
+        return data.translate(_ASCII_TABLE).decode("ascii")
+    table = bytes(
+        b if chr(b) in _PRINTABLE else ord(placeholder[0]) for b in range(256)
+    )
+    return data.translate(table).decode("latin-1")
 
 
 def decode_text(data: bytes, encoding: str = "utf-8") -> str:

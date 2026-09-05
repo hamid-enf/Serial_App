@@ -264,6 +264,35 @@ class TerminalRenderer:
         return prefix + body
 
     # ------------------------------------------------------------------
+    def render_runs(
+        self, chunks: Sequence[TerminalChunk]
+    ) -> list[tuple[Direction, str]]:
+        """Render ``chunks``, merging neighbours that share a direction.
+
+        The view pays a fixed cost per text insertion (cursor move, document
+        edit, layout invalidation), so handing it one string per *run* instead
+        of one per chunk removes work that scales with how finely the transport
+        happened to slice the stream — which is not something the user should
+        be able to feel.
+        """
+        runs: list[tuple[Direction, str]] = []
+        parts: list[str] = []
+        current: Direction | None = None
+        for chunk in chunks:
+            text = self.render(chunk)
+            if not text:
+                continue
+            if chunk.direction is not current:
+                if parts and current is not None:
+                    runs.append((current, "".join(parts)))
+                parts = []
+                current = chunk.direction
+            parts.append(text)
+        if parts and current is not None:
+            runs.append((current, "".join(parts)))
+        return runs
+
+    # ------------------------------------------------------------------
     def _stamp(self, epoch: float) -> str:
         return f"[{format_timestamp(epoch)}] " if self._show_timestamp else ""
 
@@ -273,25 +302,25 @@ class TerminalRenderer:
             return ""
         # Normalise a bare CR (progress-bar style output) so it does not eat
         # the previous line inside a plain text widget.
-        text = text.replace("\r\n", "\n").replace("\r", "\n")
+        if "\r" in text:
+            text = text.replace("\r\n", "\n").replace("\r", "\n")
         if not self._show_timestamp:
             self._at_line_start = text.endswith("\n")
             return text
 
+        # str.replace runs in C; the equivalent split/append/join loop cost
+        # around a millisecond per frame once timestamps were switched on.
         stamp = self._stamp(epoch)
-        parts = text.split("\n")
-        out: list[str] = []
-        last_index = len(parts) - 1
-        for index, part in enumerate(parts):
-            has_newline = index < last_index
-            if self._at_line_start and (part or has_newline):
-                out.append(stamp)
-                self._at_line_start = False
-            out.append(part)
-            if has_newline:
-                out.append("\n")
-                self._at_line_start = True
-        return "".join(out)
+        body = text.replace("\n", "\n" + stamp)
+        ends_with_newline = text.endswith("\n")
+        if ends_with_newline:
+            # The trailing newline must not be followed by a stamp: the line it
+            # opens is stamped by whichever chunk brings its first character.
+            body = body[: -len(stamp)]
+        if self._at_line_start:
+            body = stamp + body
+        self._at_line_start = ends_with_newline
+        return body
 
     def _render_block(self, text: str, epoch: float) -> str:
         """Hex modes always occupy whole lines."""

@@ -518,6 +518,11 @@ class MainWindow(QMainWindow):
         self._stats.add_rx(len(data))
         chunks = self._buffer.append(Direction.RX, data)
         self.terminal.append_chunks(chunks)
+        # Let the display decide how often it wants to be fed. On a fast
+        # machine at a modest baud rate this stays at 30 fps; when frames get
+        # expensive the service hands over larger batches less often instead
+        # of letting the text widget eat the event loop.
+        self._service.set_display_interval_ms(self.terminal.suggested_refresh_ms())
 
     @slot(bytes)
     def _on_data_sent(self, data: bytes) -> None:

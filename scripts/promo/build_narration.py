@@ -51,7 +51,7 @@ def main() -> int:
         path = args.vo / f"{name}.wav"
         inputs += ["-i", str(path)]
         length = duration(args.ffprobe, path) / args.tempo
-        delay_ms = int(round(cursor * 1000))
+        delay_ms = round(cursor * 1000)
         filters.append(
             f"[{index}:a]atempo={args.tempo},"
             f"adelay={delay_ms}|{delay_ms},"

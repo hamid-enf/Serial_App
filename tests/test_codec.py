@@ -127,3 +127,45 @@ class TestLineEndingEnum:
         # Qt flattens str-derived enums into str when used as item data, which
         # silently breaks .value access; guard against a regression.
         assert not isinstance(LineEnding.LF, str)
+
+
+class TestHexFormattingFastPaths:
+    """The hex formatters run on every received byte; they were rewritten to
+    use C-level primitives and must stay byte-for-byte identical."""
+
+    @staticmethod
+    def _reference_hex(data: bytes, uppercase: bool = True, separator: str = " ") -> str:
+        text = separator.join(f"{byte:02x}" for byte in data)
+        return text.upper() if uppercase else text
+
+    @staticmethod
+    def _reference_printable(data: bytes, placeholder: str = ".") -> str:
+        import string
+
+        printable = set(string.printable) - set("\t\n\r\x0b\x0c")
+        return "".join(chr(b) if chr(b) in printable else placeholder for b in data)
+
+    def test_format_hex_matches_the_reference(self) -> None:
+        for data in (b"", b"Hello", bytes(range(256)), b"\x00\xff" * 100):
+            assert format_hex(data) == self._reference_hex(data)
+            assert format_hex(data, uppercase=False) == self._reference_hex(
+                data, uppercase=False
+            )
+            assert format_hex(data, separator="-") == self._reference_hex(
+                data, separator="-"
+            )
+
+    def test_printable_ascii_matches_the_reference(self) -> None:
+        for data in (b"", bytes(range(256)), b"tab\there"):
+            assert to_printable_ascii(data) == self._reference_printable(data)
+            assert to_printable_ascii(data, "?") == self._reference_printable(data, "?")
+
+    def test_hex_dump_columns_stay_aligned(self) -> None:
+        dump = format_hex_dump(bytes(range(40)), bytes_per_line=16)
+        lines = dump.splitlines()
+        assert len(lines) == 3
+        # The short final line must still line its ASCII column up with the rest.
+        assert len({line.index("|") for line in lines}) == 1
+
+    def test_hex_dump_of_an_empty_payload(self) -> None:
+        assert format_hex_dump(b"") == ""

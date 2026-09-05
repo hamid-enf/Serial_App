@@ -83,14 +83,23 @@ class StatusBar(QStatusBar):
     ) -> None:
         dot = color or ("#3fb950" if connected else "#6b7686")
         text = f"Connected — {port} @ {baud}" if connected else "Disconnected"
-        self.state_label.setText(f'<span style="color:{dot};">●</span> {text}')
-        self.port_label.setText(f"Port: {port or '—'}")
-        self.baud_label.setText(f"Baud: {baud or '—'}")
+        _set_text(self.state_label, f'<span style="color:{dot};">●</span> {text}')
+        _set_text(self.port_label, f"Port: {port or '—'}")
+        _set_text(self.baud_label, f"Baud: {baud or '—'}")
 
     def set_counters(self, rx_bytes: int, tx_bytes: int, rate_text: str = "") -> None:
-        self.rx_label.setText(f"RX: {format_bytes(rx_bytes)}")
-        self.tx_label.setText(f"TX: {format_bytes(tx_bytes)}")
-        self.rate_label.setText(rate_text or "idle")
+        # QLabel::setText relayouts and repaints even when the string is
+        # identical.  Twice a second, forever, with a formatted byte count that
+        # rarely changes at low rates — worth the three comparisons.
+        _set_text(self.rx_label, f"RX: {format_bytes(rx_bytes)}")
+        _set_text(self.tx_label, f"TX: {format_bytes(tx_bytes)}")
+        _set_text(self.rate_label, rate_text or "idle")
 
     def set_message(self, text: str) -> None:
-        self.message_label.setText(text)
+        _set_text(self.message_label, text)
+
+
+def _set_text(label: QLabel, text: str) -> None:
+    """Assign ``text`` only when it differs from what the label already shows."""
+    if label.text() != text:
+        label.setText(text)

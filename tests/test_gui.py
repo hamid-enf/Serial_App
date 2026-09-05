@@ -459,3 +459,122 @@ class TestSettingsDialog:
         with pytest.raises(ValidationError):
             dialog._collect()
         dialog.deleteLater()
+
+
+# ----------------------------------------------------------------------
+class TestTerminalPerformanceGuards:
+    """The mechanisms that keep the pane responsive in a long, busy session.
+
+    Every one of them trades *pixels* for responsiveness and never bytes: the
+    buffer — the thing that gets exported — must always come out complete.
+    """
+
+    def _view(self, qapp: QApplication):
+        from serial_console.core.terminal_buffer import TerminalBuffer
+        from serial_console.ui.widgets.terminal_view import TerminalView
+
+        buffer = TerminalBuffer(8 * 1024 * 1024)
+        view = TerminalView(buffer)
+        view.resize(900, 500)
+        return buffer, view
+
+    def test_oversized_frame_renders_only_the_tail(self, qapp: QApplication) -> None:
+        buffer, view = self._view(qapp)
+        payload = b"".join(b"line %05d\n" % i for i in range(40_000))  # ~440 KB
+        view.append_chunks(buffer.append(Direction.RX, payload))
+
+        shown = view.output.toPlainText()
+        assert "line 39999" in shown, "the newest data must always be visible"
+        assert "line 00000" not in shown, "the head of a flood is not drawn"
+        # Nothing was lost where it matters: the buffer still has everything.
+        assert buffer.total_bytes == len(payload)
+        assert "line 00000" in buffer.render()
+
+    def test_flood_is_announced_and_the_notice_clears(self, qapp: QApplication) -> None:
+        buffer, view = self._view(qapp)
+        view.append_chunks(buffer.append(Direction.RX, b"x" * (2 * 1024 * 1024)))
+        assert not view.notice_label.isHidden()
+        assert "not shown" in view.notice_label.text()
+        assert "faster than the display" in view.output.toPlainText()
+
+        view.append_chunks(buffer.append(Direction.RX, b"calm\n"))
+        assert view.notice_label.isHidden()
+        assert view.notice_label.text() == ""
+
+    def test_decimated_output_never_starts_mid_line(self, qapp: QApplication) -> None:
+        buffer, view = self._view(qapp)
+        payload = b"".join(b"%05d-abcdefghijklmnop\n" % i for i in range(30_000))
+        view.append_chunks(buffer.append(Direction.RX, payload))
+        for line in view.output.toPlainText().splitlines():
+            if line.startswith("…") or not line.strip():
+                continue
+            assert line[:5].isdigit() and line[5] == "-", f"half a line: {line!r}"
+
+    def test_nothing_is_rendered_while_the_window_is_minimised(
+        self, qapp: QApplication
+    ) -> None:
+        from PySide6.QtWidgets import QMainWindow
+
+        from serial_console.core.terminal_buffer import TerminalBuffer
+        from serial_console.ui.widgets.terminal_view import TerminalView
+
+        buffer = TerminalBuffer(1024 * 1024)
+        view = TerminalView(buffer)
+        host = QMainWindow()
+        host.setCentralWidget(view)
+        host.showMinimized()
+
+        view.append_chunks(buffer.append(Direction.RX, b"while minimised\n"))
+        assert "while minimised" not in view.output.toPlainText()
+
+        host.showNormal()
+        view.append_chunks(buffer.append(Direction.RX, b"after restore\n"))
+        shown = view.output.toPlainText()
+        assert "while minimised" in shown, "the buffer is replayed on restore"
+        assert buffer.total_bytes == len(b"while minimised\nafter restore\n")
+
+    def test_display_interval_follows_the_measured_cost(self, window) -> None:
+        from serial_console.core.render_budget import MIN_INTERVAL_MS
+
+        assert window.terminal.suggested_refresh_ms() == MIN_INTERVAL_MS
+        # Pretend every update is expensive; the window must slow the feed down
+        # instead of letting the text widget monopolise the event loop.
+        for _ in range(60):
+            window.terminal._governor.record(45.0)
+        window._on_data_received(b"tick\n")
+        assert window.terminal.suggested_refresh_ms() > MIN_INTERVAL_MS
+        assert window._service.poll_interval_ms() >= MIN_INTERVAL_MS
+
+    def test_chunks_are_coalesced_into_one_insertion(self, qapp: QApplication) -> None:
+        buffer, view = self._view(qapp)
+        chunks = []
+        for index in range(20):
+            chunks.extend(buffer.append(Direction.RX, b"part-%02d " % index))
+        view.append_chunks(chunks)
+        text = view.output.toPlainText()
+        assert text.startswith("part-00 part-01 ")
+        assert text.endswith("part-19 ")
+
+    def test_idle_connection_backs_the_poll_timer_off(
+        self, qapp: QApplication, settings
+    ) -> None:
+        from serial_console.services.serial_service import (
+            IDLE_POLL_INTERVAL_MS,
+            SerialService,
+        )
+
+        service = SerialService(LoopbackTransport(echo=False), poll_interval_ms=10)
+        try:
+            service.connect_port(settings)
+            assert service.poll_interval_ms() == 10
+            service._last_activity -= 10.0  # pretend the line has been quiet
+            service._on_tick()
+            assert service.poll_interval_ms() == IDLE_POLL_INTERVAL_MS
+            # …and the first byte restores the responsive rate.
+            received: list[bytes] = []
+            service.dataReceived.connect(received.append)
+            service.transport.feed(b"wake up\n")
+            assert spin_until(lambda: bool(received), timeout_ms=3000)
+            assert service.poll_interval_ms() == 10
+        finally:
+            service.shutdown()

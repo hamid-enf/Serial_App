@@ -40,6 +40,9 @@ Download from https://github.com/rastikerdar/vazirmatn/releases and point
 """
 
 # Brand palette
+#: "Serial Command Console" in Persian.
+PERSIAN_SUBTITLE = "کنسول فرمان سریال"
+
 BG_TOP = "#070a10"
 BG_BOTTOM = "#101825"
 ACCENT = "#4a9eff"
@@ -68,7 +71,6 @@ class Cue:
 
 def build_timeline(vo_offsets: dict[str, tuple[float, float]]) -> list[Cue]:
     """Lay the visuals over the narration timings."""
-    s1 = vo_offsets["01"]
     s2 = vo_offsets["02"]
     s3 = vo_offsets["03"]
     s4 = vo_offsets["04"]
@@ -405,7 +407,7 @@ class Compositor:
         painter.drawText(
             QRectF(0, self.h * 0.075 + 58, self.w, 46),
             int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter),
-            "\u06a9\u0646\u0633\u0648\u0644 \u0641\u0631\u0645\u0627\u0646 \u0633\u0631\u06cc\u0627\u0644",
+            PERSIAN_SUBTITLE,
         )
 
     def draw_watermark(self, painter, alpha: float = 1.0) -> None:
@@ -475,10 +477,8 @@ class Renderer:
     def window_rect(self, scale: float = 1.0, dy: int = 0):
         from PySide6.QtCore import QRect
 
-        if self.c.vertical:
-            width = int(self.c.w * 0.93 * scale)
-        else:
-            width = int(self.c.w * 0.76 * scale)
+        fraction = 0.93 if self.c.vertical else 0.76
+        width = int(self.c.w * fraction * scale)
         height = int(width * WINDOW_H / WINDOW_W)
         x = (self.c.w - width) // 2
         y = int(self.c.h * (0.43 if self.c.vertical else 0.415)) - height // 2 + dy
@@ -807,8 +807,8 @@ def main() -> int:
 
     from PySide6.QtWidgets import QApplication
 
-    from serial_console.ui.theme import apply_theme
     from serial_console.models.enums import Theme
+    from serial_console.ui.theme import apply_theme
 
     app = QApplication(sys.argv[:1])
     apply_theme(app, Theme.DARK)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Sequence
 
 from PySide6.QtCore import Qt, Signal
@@ -19,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...core.logging_setup import get_logger
+from ...core.render_budget import FrameGovernor, RenderBudget
 from ...core.terminal_buffer import TerminalBuffer, TerminalChunk, TerminalRenderer
 from ...models.enums import Direction, DisplayMode, Theme
 from ...models.settings import TerminalSettings
@@ -32,9 +34,34 @@ _log = get_logger(__name__)
 #: process without bound.
 MAX_DISPLAY_BLOCKS = 20000
 
-#: Above this many bytes in one frame the view stops rendering every byte and
-#: shows a summary instead, so the GUI stays interactive during a flood.
-FLOOD_THRESHOLD_BYTES = 96 * 1024
+#: Ceiling for a full re-render (a settings change, or restoring a minimised
+#: window).  Beyond this only the newest text is rebuilt, with a note saying so.
+RERENDER_BUDGET_BYTES = 4 * 1024 * 1024
+
+
+class _LogOutput(QPlainTextEdit):
+    """The text widget, instrumented with what its own repaint costs.
+
+    Insertion is only half of a display update; the other half is the repaint
+    that follows it, and on a slow machine or a large window that half is the
+    bigger one. Measuring it here — rather than guessing a multiplier — is what
+    lets :class:`~serial_console.core.render_budget.FrameGovernor` keep the
+    real, total cost inside its budget.
+    """
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._paint_ms = 0.0
+
+    @property
+    def paint_ms(self) -> float:
+        return self._paint_ms
+
+    def paintEvent(self, event) -> None:
+        started = time.perf_counter()
+        super().paintEvent(event)
+        elapsed = (time.perf_counter() - started) * 1000.0
+        self._paint_ms += 0.25 * (elapsed - self._paint_ms)
 
 
 class TerminalView(QWidget):
@@ -53,6 +80,11 @@ class TerminalView(QWidget):
         self._renderer = TerminalRenderer()
         self._formats: dict[Direction, QTextCharFormat] = {}
         self._suppress_signals = False
+        self._budget = RenderBudget()
+        self._governor = FrameGovernor()
+        self._skipped_bytes = 0
+        self._flood_announced = False
+        self._pending_restore = False
         self._build()
         self._rebuild_formats()
 
@@ -72,6 +104,18 @@ class TerminalView(QWidget):
         self.throughput_label = QLabel("")
         self.throughput_label.setObjectName("HintLabel")
         header.addWidget(self.throughput_label)
+
+        # Only visible while the display is deliberately skipping text, so the
+        # user is never left wondering whether bytes were lost.  They were not:
+        # the buffer and every export still contain them.
+        self.notice_label = QLabel("")
+        self.notice_label.setObjectName("WarningLabel")
+        self.notice_label.setToolTip(
+            "Data is arriving faster than the screen can draw it.\n"
+            "The newest lines are shown; everything is still buffered and exported."
+        )
+        self.notice_label.setVisible(False)
+        header.addWidget(self.notice_label)
 
         header.addStretch(1)
 
@@ -110,7 +154,7 @@ class TerminalView(QWidget):
 
         outer.addLayout(header)
 
-        self.output = QPlainTextEdit()
+        self.output = _LogOutput()
         self.output.setObjectName("Terminal")
         self.output.setReadOnly(True)
         self.output.setUndoRedoEnabled(False)
@@ -188,16 +232,151 @@ class TerminalView(QWidget):
     # Rendering
     # ------------------------------------------------------------------
     def append_chunks(self, chunks: Sequence[TerminalChunk]) -> None:
-        """Append newly buffered chunks to the view."""
+        """Append newly buffered chunks to the view.
+
+        Three things keep this cheap no matter how long the session has run:
+        nothing is drawn while the window is minimised, no more than one
+        frame's worth of text is rendered (the rest stays in the buffer), and
+        neighbouring chunks are merged into a single insertion.
+        """
         if not chunks:
             return
-        total = sum(chunk.size for chunk in chunks)
-        if total > FLOOD_THRESHOLD_BYTES:
-            self._append_flood_summary(chunks, total)
+
+        if self._window_is_minimised():
+            # Nobody can see the pane; rendering into it is pure cost. The
+            # bytes are safe in the buffer and the view rebuilds from it as
+            # soon as the window comes back.
+            self._pending_restore = True
             return
+        if self._pending_restore:
+            self._pending_restore = False
+            self.rerender()
+            return
+
+        total = sum(chunk.size for chunk in chunks)
+        allowance = self._budget.allowance()
+        if total > allowance:
+            self._append_decimated(chunks, total, allowance)
+            return
+
+        started = time.perf_counter()
         self._append_rendered(chunks)
+        self._note_frame_cost(total, (time.perf_counter() - started) * 1000.0)
+        if self._skipped_bytes:
+            self._clear_skip_notice()
+
+    def _note_frame_cost(self, rendered_bytes: int, elapsed_ms: float) -> None:
+        """Record what this update cost, for both adaptive limits.
+
+        The budget cares about the *insertion* rate (bytes per millisecond),
+        while the governor cares about the total time one update takes — which
+        includes the repaint the insertion triggers.
+        """
+        self._budget.record(rendered_bytes, elapsed_ms)
+        self._governor.record(elapsed_ms + self.output.paint_ms)
+
+    def suggested_refresh_ms(self) -> int:
+        """Display interval that keeps the UI thread mostly free.
+
+        The controller feeds this to the serial service, which decides how
+        often to hand over a batch of received bytes.
+        """
+        return self._governor.interval_ms()
+
+    def frame_cost_ms(self) -> float:
+        """Smoothed cost of one display update, in milliseconds."""
+        return self._governor.cost_ms
+
+    def _window_is_minimised(self) -> bool:
+        window = self.window()
+        return bool(window is not None and window.isMinimized())
+
+    def _append_decimated(
+        self, chunks: Sequence[TerminalChunk], total: int, allowance: int
+    ) -> None:
+        """Render only the newest part of an oversized frame.
+
+        Rendering 5 MB of text in one frame would stall the event loop for
+        seconds, and the older lines would be scrolled out of the display
+        before anyone could read them. The bytes are still in the buffer (and
+        therefore still exportable and still visible after a re-render) — only
+        the *pixels* are skipped, and the header says so.
+        """
+        tail: list[TerminalChunk] = []
+        collected = 0
+        for chunk in reversed(chunks):
+            remaining = allowance - collected
+            if remaining <= 0:
+                break
+            if chunk.size <= remaining:
+                tail.append(chunk)
+                collected += chunk.size
+                continue
+            # A single chunk can be larger than the whole allowance (the
+            # transport hands over up to 64 KB at a time), so the split has to
+            # happen *inside* it — otherwise one oversized chunk would sail
+            # past the limit and stall the frame it was meant to protect.
+            piece = chunk.data[-remaining:]
+            newline = piece.find(b"\n")
+            if 0 <= newline < len(piece) - 1:
+                piece = piece[newline + 1 :]  # never start on half a line
+            if piece:
+                tail.append(
+                    TerminalChunk(
+                        direction=chunk.direction,
+                        data=piece,
+                        timestamp=chunk.timestamp,
+                    )
+                )
+                collected += len(piece)
+            break
+        tail.reverse()
+
+        skipped = total - collected
+        if skipped > 0:
+            self._skipped_bytes += skipped
+            self._show_skip_notice()
+            # The dropped chunks may have ended mid-line; start clean so the
+            # tail cannot be spliced onto an unrelated half-line.
+            self._renderer.reset()
+
+        started = time.perf_counter()
+        self._append_rendered(tail)
+        self._note_frame_cost(collected, (time.perf_counter() - started) * 1000.0)
+
+    def _show_skip_notice(self) -> None:
+        from ...core.stats import format_bytes
+
+        self.notice_label.setText(
+            f"display limited · {format_bytes(self._skipped_bytes)} not shown"
+        )
+        self.notice_label.setVisible(True)
+        if not self._flood_announced:
+            self._flood_announced = True
+            self._append_rendered(
+                [
+                    TerminalChunk(
+                        direction=Direction.INFO,
+                        data=(
+                            "\n… data is arriving faster than the display can render it; "
+                            "showing the newest lines only. Everything is kept in the "
+                            "buffer and included in exports …\n"
+                        ).encode(),
+                        timestamp=0.0,
+                    )
+                ]
+            )
+
+    def _clear_skip_notice(self) -> None:
+        self._skipped_bytes = 0
+        self._flood_announced = False
+        self.notice_label.clear()
+        self.notice_label.setVisible(False)
 
     def _append_rendered(self, chunks: Sequence[TerminalChunk]) -> None:
+        runs = self._renderer.render_runs(chunks)
+        if not runs:
+            return
         scrollbar = self.output.verticalScrollBar()
         follow = self.auto_scroll
         previous_value = scrollbar.value()
@@ -206,11 +385,8 @@ class TerminalView(QWidget):
         cursor.movePosition(QTextCursor.MoveOperation.End)
         cursor.beginEditBlock()
         try:
-            for chunk in chunks:
-                text = self._renderer.render(chunk)
-                if not text:
-                    continue
-                cursor.insertText(text, self._formats.get(chunk.direction, QTextCharFormat()))
+            for direction, text in runs:
+                cursor.insertText(text, self._formats.get(direction, QTextCharFormat()))
         finally:
             cursor.endEditBlock()
 
@@ -218,35 +394,6 @@ class TerminalView(QWidget):
             scrollbar.setValue(scrollbar.maximum())
         else:
             scrollbar.setValue(min(previous_value, scrollbar.maximum()))
-
-    def _append_flood_summary(self, chunks: Sequence[TerminalChunk], total: int) -> None:
-        """Render only the tail of an oversized frame.
-
-        Rendering 5 MB of text in a single frame would stall the event loop for
-        seconds.  The bytes are still in the buffer (and therefore still
-        exportable) — only the *pixels* are skipped.
-        """
-        tail_budget = FLOOD_THRESHOLD_BYTES // 2
-        tail: list[TerminalChunk] = []
-        collected = 0
-        for chunk in reversed(chunks):
-            tail.append(chunk)
-            collected += chunk.size
-            if collected >= tail_budget:
-                break
-        tail.reverse()
-        skipped = total - collected
-        if skipped > 0:
-            note = TerminalChunk(
-                direction=Direction.INFO,
-                data=(
-                    f"\n… {skipped:,} bytes received faster than the display can render; "
-                    "they are kept in the buffer and included in exports …\n"
-                ).encode(),
-                timestamp=tail[0].timestamp if tail else 0.0,
-            )
-            self._append_rendered([note])
-        self._append_rendered(tail)
 
     def rerender(self) -> None:
         """Rebuild the whole view from the buffer (after a settings change)."""
@@ -257,11 +404,12 @@ class TerminalView(QWidget):
             hex_bytes_per_line=self._settings.hex_bytes_per_line,
         )
         self.output.clear()
+        self._clear_skip_notice()
         chunks = self._buffer.chunks()
         if not chunks:
             return
         # Re-rendering a full 50 MB buffer would block; cap it and say so.
-        budget = 4 * 1024 * 1024
+        budget = RERENDER_BUDGET_BYTES
         total = sum(c.size for c in chunks)
         if total > budget:
             kept: list[TerminalChunk] = []
@@ -292,6 +440,7 @@ class TerminalView(QWidget):
     def clear(self) -> None:
         self.output.clear()
         self._renderer.reset()
+        self._clear_skip_notice()
 
     # ------------------------------------------------------------------
     # Actions

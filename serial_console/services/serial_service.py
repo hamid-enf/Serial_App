@@ -9,6 +9,8 @@ widget being touched from the reader thread.
 
 from __future__ import annotations
 
+import time
+
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from ..core.errors import UserError
@@ -28,6 +30,16 @@ DEFAULT_POLL_INTERVAL_MS = 33
 #: Upper bound on bytes handed to the view in a single frame.  Anything beyond
 #: this stays queued, keeping frame time bounded at any baud rate.
 MAX_BYTES_PER_FRAME = 256 * 1024
+
+#: Tick interval used once the line has been quiet for a while.  A silent port
+#: does not need 30 wake-ups a second: on an idle connection this drops the
+#: application's background CPU use to roughly nothing (and stops it draining a
+#: laptop battery), while the first byte that arrives restores the fast rate
+#: within one slow tick.
+IDLE_POLL_INTERVAL_MS = 150
+
+#: How long the line must stay silent before backing off.
+IDLE_AFTER_S = 1.5
 
 
 class SerialService(QObject):
@@ -64,8 +76,11 @@ class SerialService(QObject):
         self._settings: SerialSettings | None = None
         self._timer = QTimer(self)
         self._timer.setTimerType(_precise_timer_type())
-        self._timer.setInterval(max(5, int(poll_interval_ms)))
+        self._active_interval_ms = max(5, int(poll_interval_ms))
+        self._idle_interval_ms = max(self._active_interval_ms, IDLE_POLL_INTERVAL_MS)
+        self._timer.setInterval(self._active_interval_ms)
         self._timer.timeout.connect(self._on_tick)
+        self._last_activity = time.monotonic()
 
     # ------------------------------------------------------------------
     # State
@@ -98,7 +113,25 @@ class SerialService(QObject):
         return self._timer.interval()
 
     def set_poll_interval_ms(self, interval_ms: int) -> None:
-        self._timer.setInterval(max(5, int(interval_ms)))
+        self._active_interval_ms = max(5, int(interval_ms))
+        self._idle_interval_ms = max(self._active_interval_ms, IDLE_POLL_INTERVAL_MS)
+        self._timer.setInterval(self._active_interval_ms)
+
+    def set_display_interval_ms(self, interval_ms: int) -> None:
+        """Slow the frame tick down to what the display can actually afford.
+
+        Called by the window with the terminal's own measurement. Handing over
+        one larger batch every 80 ms costs far less than three small ones and
+        looks identical on screen, so this is how the application stays
+        responsive on a slow machine or at an absurd baud rate.
+        """
+        interval = max(5, int(interval_ms))
+        if interval == self._active_interval_ms:
+            return
+        self._active_interval_ms = interval
+        self._idle_interval_ms = max(interval, IDLE_POLL_INTERVAL_MS)
+        if self._timer.isActive() and self._timer.interval() < interval:
+            self._timer.setInterval(interval)
 
     def reset_counters(self) -> None:
         self._worker.reset_counters()
@@ -115,6 +148,8 @@ class SerialService(QObject):
         # Drain immediately so an open failure surfaces without a frame delay.
         self._drain_events()
         if started:
+            self._last_activity = time.monotonic()
+            self._timer.setInterval(self._active_interval_ms)
             self._timer.start()
         return started
 
@@ -158,17 +193,33 @@ class SerialService(QObject):
     # Frame tick
     # ------------------------------------------------------------------
     def _on_tick(self) -> None:
-        self._drain_rx()
+        busy = self._drain_rx()
         self._drain_events()
+        self._adjust_tick_rate(busy)
         if not self._worker.is_running and self._timer.isActive():
             self._timer.stop()
 
-    def _drain_rx(self) -> None:
+    def _adjust_tick_rate(self, busy: bool) -> None:
+        """Poll fast while data flows, slowly when the line is silent."""
+        now = time.monotonic()
+        if busy:
+            self._last_activity = now
+            if self._timer.interval() != self._active_interval_ms:
+                self._timer.setInterval(self._active_interval_ms)
+        elif (
+            self._timer.interval() != self._idle_interval_ms
+            and now - self._last_activity >= IDLE_AFTER_S
+        ):
+            self._timer.setInterval(self._idle_interval_ms)
+
+    def _drain_rx(self) -> bool:
+        """Publish one frame of received data; ``True`` if anything moved."""
         batch: RxBatch = self._worker.poll_rx(MAX_BYTES_PER_FRAME)
         if batch.dropped:
             self.overflowed.emit(batch.dropped)
         if batch.data:
             self.dataReceived.emit(batch.data)
+        return bool(batch.data) or bool(batch.dropped)
 
     def _drain_events(self) -> None:
         for event in self._worker.poll_events():

@@ -4,6 +4,49 @@ All notable changes to the ENF Serial Command Console are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 the project uses [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **The receive pane now paces itself.** Each display update measures its own cost
+  (insertion plus repaint) and the pane asks the serial service for larger batches,
+  less often, until rendering fits inside ~30 % of wall-clock time. The refresh rate
+  moves between 30 fps and 5 fps by itself, so a slow machine, a large window or a
+  2 Mbit/s stream no longer turns the UI sluggish as the session grows.
+- **Per-frame render allowance.** The pane measures how many bytes per millisecond it
+  can insert and skips anything beyond one frame's worth — now also *within* a single
+  oversized chunk, which the previous flood guard could not split. An amber
+  `display limited · N MB not shown` badge appears while this is in effect. Nothing is
+  lost: the buffer, exports and counters still contain every byte, and toggling any
+  display setting re-renders them from the buffer.
+- **Hex formatting rewritten on C primitives.** `format_hex` is ~32× faster and
+  `format_hex_dump` ~7× faster (`bytes.hex()` / `bytes.translate()` instead of per-byte
+  Python loops), cutting whole milliseconds per frame off Hex and Hex+ASCII modes.
+  Output is byte-for-byte identical, which is asserted against the old implementation.
+- **Timestamp rendering** uses a single `str.replace` instead of a split/append/join
+  loop, and neighbouring chunks with the same direction are merged into one insertion
+  instead of one per chunk.
+- **Nothing is rendered while the window is minimised**; the buffer is replayed on
+  restore.
+- **An idle connection backs its poll timer off** from 33 ms to 150 ms, so a connected
+  but silent port costs almost no CPU. The first byte restores the fast rate.
+- Status-bar labels are only repainted when their text actually changes.
+
+### Added
+
+- `scripts/bench_terminal.py` — simulates a session of a given length at a given data
+  rate (optionally on a simulated slower machine) and reports the share of the UI
+  thread spent rendering, plus per-segment frame costs to expose any degradation.
+- `serial_console/core/render_budget.py` — `RenderBudget` and `FrameGovernor`, the two
+  Qt-free adaptive limits, with 13 unit tests of their own.
+- README: [Staying fast in a long session](README.md#staying-fast-in-a-long-session),
+  with the measured numbers.
+
+### Fixed
+
+- A single chunk larger than the flood threshold used to be rendered in full, so one
+  64 KB burst could stall a frame the guard was supposed to protect.
+
 ## [1.0.0] — 2026-09-04
 
 First release. A complete replacement for the Arduino Serial Monitor, built

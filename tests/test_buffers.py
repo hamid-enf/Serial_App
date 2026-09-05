@@ -5,10 +5,13 @@ from __future__ import annotations
 import threading
 import time
 
+import pytest
+
 from serial_console.core.rx_aggregator import RxAggregator
 from serial_console.core.terminal_buffer import (
     MAX_CHUNK_BYTES,
     TerminalBuffer,
+    TerminalChunk,
     TerminalRenderer,
     format_timestamp,
 )
@@ -223,3 +226,85 @@ class TestExport:
         buffer = TerminalBuffer()
         buffer.append(Direction.RX, b"Hi")
         assert "48 69" in buffer.to_csv()
+
+
+class TestRendererFastPaths:
+    """Rendering was rewritten for speed; the output must not move."""
+
+    @staticmethod
+    def _reference_line_oriented(renderer, text: str, epoch: float) -> str:
+        """The original split/append/join implementation, kept as an oracle."""
+        if not text:
+            return ""
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+        if not renderer._show_timestamp:
+            renderer._at_line_start = text.endswith("\n")
+            return text
+        stamp = renderer._stamp(epoch)
+        parts = text.split("\n")
+        out: list[str] = []
+        last_index = len(parts) - 1
+        for index, part in enumerate(parts):
+            has_newline = index < last_index
+            if renderer._at_line_start and (part or has_newline):
+                out.append(stamp)
+                renderer._at_line_start = False
+            out.append(part)
+            if has_newline:
+                out.append("\n")
+                renderer._at_line_start = True
+        return "".join(out)
+
+    @pytest.mark.parametrize("timestamps", [False, True])
+    def test_streaming_output_matches_the_reference(self, timestamps: bool) -> None:
+        fragments = ["", "\n", "a", "ab\n", "\nx", "a\n\nb\n", "one\ntwo", "\r\n",
+                     "x\ry\r\n", "\n\n\n", "tail"]
+        directions = [Direction.RX, Direction.TX, Direction.INFO, Direction.RX]
+        fast = TerminalRenderer(show_timestamp=timestamps)
+        oracle = TerminalRenderer(show_timestamp=timestamps)
+        for index, fragment in enumerate(fragments):
+            direction = directions[index % len(directions)]
+            chunk = TerminalChunk(
+                direction=direction, data=fragment.encode(), timestamp=1_700_000_000.5
+            )
+            expected_prefix = ""
+            if (
+                oracle._last_direction is not None
+                and direction is not oracle._last_direction
+                and not oracle._at_line_start
+            ):
+                expected_prefix = "\n"
+                oracle._at_line_start = True
+            oracle._last_direction = direction
+            expected = expected_prefix + self._reference_line_oriented(
+                oracle, fragment, chunk.timestamp
+            )
+            assert fast.render(chunk) == expected
+
+    @pytest.mark.parametrize("timestamps", [False, True])
+    def test_render_runs_preserves_the_stream(self, timestamps: bool) -> None:
+        chunks = [
+            TerminalChunk(direction=Direction.RX, data=b"one\n", timestamp=1.0),
+            TerminalChunk(direction=Direction.RX, data=b"two\n", timestamp=2.0),
+            TerminalChunk(direction=Direction.TX, data=b"cmd\n", timestamp=3.0),
+            TerminalChunk(direction=Direction.RX, data=b"three\n", timestamp=4.0),
+        ]
+        per_chunk = TerminalRenderer(show_timestamp=timestamps)
+        runs_renderer = TerminalRenderer(show_timestamp=timestamps)
+        flat = "".join(per_chunk.render(chunk) for chunk in chunks)
+        runs = runs_renderer.render_runs(chunks)
+        assert "".join(text for _, text in runs) == flat
+        # Neighbouring chunks of the same direction become one insertion.
+        assert [direction for direction, _ in runs] == [
+            Direction.RX,
+            Direction.TX,
+            Direction.RX,
+        ]
+
+    def test_render_runs_skips_empty_chunks(self) -> None:
+        renderer = TerminalRenderer()
+        chunks = [
+            TerminalChunk(direction=Direction.RX, data=b"", timestamp=1.0),
+            TerminalChunk(direction=Direction.RX, data=b"data", timestamp=2.0),
+        ]
+        assert renderer.render_runs(chunks) == [(Direction.RX, "data")]

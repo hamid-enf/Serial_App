@@ -68,7 +68,7 @@ class _ButtonGrid(QWidget):
     def relayout(self) -> None:
         while self._layout.count():
             item = self._layout.takeAt(0)
-            widget = item.widget()
+            widget = item.widget() if item is not None else None
             if widget is not None:
                 widget.setParent(None)
         for index, widget in enumerate(self._widgets):
