@@ -128,9 +128,23 @@ harness on the development machine.
 ## 4. Ideas, ranked
 
 Ordered by *value per unit of risk*. Each entry says what it is, why it is
-worth doing, and roughly how.
+worth doing, and roughly how. Every item below is also filed as an issue, so
+the tracker and this document say the same thing:
 
-### 4.1 A virtualised log widget — the only remaining big performance win
+| Issue | Item |
+| --- | --- |
+| [#2](https://github.com/hamid-enf/Serial_App/issues/2) | Enable the CI workflows (blocked on a human push — see §5.1) |
+| [#3](https://github.com/hamid-enf/Serial_App/issues/3) | Real-hardware QA pass on Windows |
+| [#4](https://github.com/hamid-enf/Serial_App/issues/4) | Find, filter and highlight in the receive pane |
+| [#5](https://github.com/hamid-enf/Serial_App/issues/5) | Plot view for numeric telemetry |
+| [#6](https://github.com/hamid-enf/Serial_App/issues/6) | Command sequences / macros |
+| [#7](https://github.com/hamid-enf/Serial_App/issues/7) | Delta timestamps *(good first issue)* |
+| [#8](https://github.com/hamid-enf/Serial_App/issues/8) | Auto-reconnect when the port re-enumerates |
+| [#9](https://github.com/hamid-enf/Serial_App/issues/9) | Reset / boot-mode DTR-RTS buttons |
+| [#10](https://github.com/hamid-enf/Serial_App/issues/10) | Auto-save the session capture to disk |
+| [#11](https://github.com/hamid-enf/Serial_App/issues/11) | Virtualised log widget — the last big rendering win |
+
+### 4.1 A virtualised log widget — the only remaining big performance win ([#11](https://github.com/hamid-enf/Serial_App/issues/11))
 
 **Why.** §2.2 shows 95 % of a frame is inside Qt's rich-text machinery, doing
 work a log viewer does not need: a full `QTextDocument` with per-block
@@ -150,7 +164,7 @@ has proved itself; `TerminalBuffer` already makes both views interchangeable.
 **Do this only if** a user reports a machine where the current design is still
 too slow — at 115200 baud it uses 10 % of one thread today.
 
-### 4.2 Find, filter and highlight in the receive pane
+### 4.2 Find, filter and highlight in the receive pane ([#4](https://github.com/hamid-enf/Serial_App/issues/4))
 
 **Why.** This is the feature people actually miss in the Arduino Serial
 Monitor, and the buffer already has everything needed. It is a bigger practical
@@ -171,7 +185,7 @@ already how display settings change. Watch the cost of regex per line at high
 rates — apply filters only when one is active, and count them in the frame
 budget.
 
-### 4.3 A plot view for numeric telemetry
+### 4.3 A plot view for numeric telemetry ([#5](https://github.com/hamid-enf/Serial_App/issues/5))
 
 **Why.** The Arduino Serial Plotter is the one feature people leave the Serial
 Monitor for. Parsing `label:value` or CSV lines and drawing a rolling chart
@@ -182,7 +196,7 @@ series; keep a fixed-size ring buffer per series; draw with `QPainter` (no
 extra dependency) or `QtCharts` if a dependency is acceptable. Reuse
 `FrameGovernor` for the redraw budget.
 
-### 4.4 Command sequences / macros
+### 4.4 Command sequences / macros ([#6](https://github.com/hamid-enf/Serial_App/issues/6))
 
 **Why.** The saved buttons are the differentiator; the natural next step is a
 *sequence*: send A, wait 200 ms, send B, wait for a line matching `OK`, then
@@ -197,10 +211,10 @@ editor dialog reusing the command editor's widgets. Stop-all already exists
 
 | Idea | Why | Sketch |
 | --- | --- | --- |
-| **Delta timestamps** (`+12.4 ms` since the previous line) | Best single feature for debugging timing, and trivial | A third timestamp mode in `TerminalRenderer._stamp` |
-| **Auto-reconnect** when the port re-enumerates | ESP32/Arduino boards disappear on every flash | Watch the port list; if the last port comes back within N seconds, reopen with the same settings and say so in the log |
-| **Reset / boot-mode buttons** (toggle DTR/RTS) | Standard need for ESP32 and STM32 | The transport already applies initial DTR/RTS; expose momentary toggles in the connection bar |
-| **Auto-save the session to disk** with rotation | Long unattended captures currently rely on the in-memory buffer | Append raw bytes to a file as they arrive, in the reader thread's own writer; keep it independent from the display buffer |
+| **Delta timestamps** ([#7](https://github.com/hamid-enf/Serial_App/issues/7)) | Best single feature for debugging timing, and trivial | A third timestamp mode in `TerminalRenderer._stamp` |
+| **Auto-reconnect** ([#8](https://github.com/hamid-enf/Serial_App/issues/8)) | ESP32/Arduino boards disappear on every flash | Watch the port list; if the last port comes back within N seconds, reopen with the same settings and say so in the log |
+| **Reset / boot-mode buttons** ([#9](https://github.com/hamid-enf/Serial_App/issues/9)) | Standard need for ESP32 and STM32 | The transport already applies initial DTR/RTS; expose momentary toggles in the connection bar |
+| **Auto-save the session to disk** ([#10](https://github.com/hamid-enf/Serial_App/issues/10)) | Long unattended captures currently rely on the in-memory buffer | Append raw bytes to a file as they arrive, in the reader thread's own writer; keep it independent from the display buffer |
 | **Send a file / paste multiple lines with delay** | Bulk provisioning and config dumps | Reuse the sequence runner from §4.4 |
 | **Button placeholders** (`{counter}`, `{time}`, `{clipboard}`) | Turns 20 buttons into 20 *parameterised* buttons | Expand in `build_payload`'s caller, not in the codec |
 | **Per-button keyboard shortcuts** | Power users | `QShortcut` per button, stored in the model, validated for conflicts |
@@ -235,7 +249,7 @@ editor dialog reusing the command editor's widgets. Stop-all already exists
 
 ### 5.1 The CI workflows are not active
 
-`packaging/ci/{tests.yml,build-windows.yml}` are finished but sit outside
+**Tracked as [#2](https://github.com/hamid-enf/Serial_App/issues/2).** `packaging/ci/{tests.yml,build-windows.yml}` are finished but sit outside
 `.github/workflows/`, because the automated account that wrote them cannot push
 workflow files (GitHub rejects it without the `workflows` permission). One
 `git mv` from a human clone activates both — see `packaging/ci/README.md`.
@@ -243,7 +257,7 @@ workflow files (GitHub rejects it without the `workflows` permission). One
 
 ### 5.2 Other open items
 
-- **No real-hardware testing.** Everything was exercised against the loopback
+- **No real-hardware testing** ([#3](https://github.com/hamid-enf/Serial_App/issues/3)). Everything was exercised against the loopback
   transport, a mock port and the offscreen Qt platform. A pass with a real
   CH340/CP210x board, a USB unplug mid-stream and a 2 Mbaud device is the
   single most valuable manual QA left.
