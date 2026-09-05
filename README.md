@@ -43,6 +43,7 @@ same folder). Every frame is the real application, rendered from the source by
 - [Architecture](#architecture)
 - [Staying fast in a long session](#staying-fast-in-a-long-session)
 - [Unicode, Persian and fonts](#unicode-persian-and-fonts)
+- [Roadmap and project status](docs/ROADMAP.md)
 - [Testing](#testing)
 - [Building the Windows executable](#building-the-windows-executable)
 - [Troubleshooting](#troubleshooting)
