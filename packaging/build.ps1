@@ -37,7 +37,38 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$Root      = Split-Path -Parent $ScriptDir
+
+# Resolve the repository root, and prove it. An odd invocation must not
+# silently point the build at the wrong folder: fall back to the current
+# directory, then to an explicit SERIAL_CONSOLE_ROOT override.
+function Test-RepoRoot([string]$Path) {
+    if (-not $Path) { return $false }
+    return (Test-Path (Join-Path $Path 'pyproject.toml')) -and
+           (Test-Path (Join-Path $Path 'serial_console\__init__.py'))
+}
+
+$Root = $null
+foreach ($candidate in @($env:SERIAL_CONSOLE_ROOT, (Split-Path -Parent $ScriptDir), (Get-Location).Path)) {
+    if (Test-RepoRoot $candidate) { $Root = (Resolve-Path $candidate).Path; break }
+}
+if (-not $Root) {
+    throw (@'
+Could not locate the repository.
+
+  Script directory  : {0}
+  Current directory : {1}
+
+  Neither contains pyproject.toml and serial_console\, so this is not a
+  Serial_App working copy - or the copy is incomplete.
+
+  Fixes:
+    * cd into the repository, then run:  .\packaging\build.ps1
+    * or point the script at it:
+        $env:SERIAL_CONSOLE_ROOT = 'D:\Serial_App'; .\packaging\build.ps1
+    * if files really are missing, restore them with:  git pull
+'@ -f $ScriptDir, (Get-Location).Path)
+}
+
 $BuildVenv = Join-Path $Root '.build-venv'
 $DistDir   = Join-Path $ScriptDir 'dist'
 $WorkDir   = Join-Path $ScriptDir 'build'
@@ -51,6 +82,7 @@ function Write-Step([string]$Text) {
 Push-Location $Root
 try {
     Write-Step '[1/5] Locating Python'
+    Write-Host ("Project root: {0}" -f $Root)
     # The py launcher is tried last: it is frequently installed without any
     # registered runtime (Microsoft Store installs, leftovers from an
     # uninstall) and then fails with "No suitable Python runtime found" even
@@ -103,12 +135,52 @@ No Python 3.10 or newer could be found.
     if ($Clean -and (Test-Path $BuildVenv)) {
         Remove-Item -Recurse -Force $BuildVenv
     }
-    if (-not (Test-Path $BuildVenv)) {
+    if (-not $UseVenv -and -not (Test-Path $BuildVenv)) {
         & $python[0] @($python[1..($python.Count - 1)]) -m venv $BuildVenv
     }
     $venvPython = Join-Path $BuildVenv 'Scripts\python.exe'
+    if ($UseVenv) {
+        if (-not $env:VIRTUAL_ENV) { throw '-UseVenv was passed but no virtual environment is active.' }
+        $venvPython = Join-Path $env:VIRTUAL_ENV 'Scripts\python.exe'
+        Write-Host ("Building inside the active environment: {0}" -f $env:VIRTUAL_ENV)
+    }
+    if (-not (Test-Path $venvPython)) { throw "python.exe not found at $venvPython" }
+
     & $venvPython -m pip install --upgrade pip --quiet
-    & $venvPython -m pip install -r (Join-Path $Root 'requirements-dev.txt') --quiet
+
+    # Absolute paths: never rely on the current directory for these.
+    $reqDev = Join-Path $Root 'requirements-dev.txt'
+    $req    = Join-Path $Root 'requirements.txt'
+    if (Test-Path $reqDev) {
+        Write-Host ("Installing dependencies from {0} ..." -f $reqDev)
+        & $venvPython -m pip install -r $reqDev --quiet
+    }
+    elseif (Test-Path $req) {
+        Write-Warning "$reqDev is missing from this working copy - installing the build tools explicitly. Run 'git pull' to restore it."
+        & $venvPython -m pip install -r $req --quiet
+        if ($LASTEXITCODE -eq 0) { & $venvPython -m pip install 'pytest>=8.0' 'pyinstaller>=6.6' --quiet }
+    }
+    else {
+        Write-Warning 'No requirements files found - installing the known dependency set.'
+        & $venvPython -m pip install 'PySide6-Essentials>=6.6,<7' 'pyserial>=3.5,<4' 'pytest>=8.0' 'pyinstaller>=6.6' --quiet
+    }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host ''
+        Write-Warning 'Dependency installation failed. Re-running without --quiet so the real error is visible:'
+        if (Test-Path $reqDev) { & $venvPython -m pip install -r $reqDev }
+        elseif (Test-Path $req) { & $venvPython -m pip install -r $req }
+        throw @'
+Installing the build dependencies failed.
+
+  Common causes:
+    * No internet access, or a proxy:  $env:HTTPS_PROXY = 'http://host:port'
+    * Corporate TLS interception:      pip config set global.cert C:\path\root.pem
+    * No PySide6 wheel for this Python (needs 3.10-3.13, 64-bit x86)
+    * Not enough disk space (PySide6 unpacks to ~400 MB)
+
+  docs\BUILD.md has the full list.
+'@
+    }
 
     Write-Step '[3/5] Running tests'
     if ($SkipTests) {
@@ -116,7 +188,7 @@ No Python 3.10 or newer could be found.
     }
     else {
         $env:QT_QPA_PLATFORM = 'offscreen'
-        & $venvPython -m pytest tests -q
+        & $venvPython -m pytest (Join-Path $Root 'tests') -q
         $testExit = $LASTEXITCODE
         Remove-Item Env:\QT_QPA_PLATFORM -ErrorAction SilentlyContinue
         if ($testExit -ne 0) { throw 'Tests failed - build aborted. Re-run with -SkipTests to build anyway.' }

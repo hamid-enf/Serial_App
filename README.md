@@ -660,7 +660,7 @@ packaging\dist\SerialCommandConsole\SerialCommandConsole.exe --selftest
 
 The executable is unsigned, so Windows shows *“Windows protected your PC”* on first run:
 **More info → Run anyway**. The only real fix is an OV/EV code-signing certificate.
-[`docs/BUILD.md`](docs/BUILD.md#troubleshooting) covers this and sixteen other failure
+[`docs/BUILD.md`](docs/BUILD.md#troubleshooting) covers this and seventeen other failure
 modes — antivirus false positives, `ModuleNotFoundError` in the frozen build, missing Qt
 platform plugins, long paths, stale build environments and the rest.
 

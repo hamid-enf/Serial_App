@@ -87,6 +87,7 @@ Flags combine: `packaging\build.bat /clean /installer`.
 
 ```
 === [1/5] Locating Python ===========================================
+Project root: C:\src\Serial_App
 Found: "python"
 Python 3.12.4
 
@@ -285,20 +286,21 @@ can see where the file came from.
 | --- | --- |
 | `No Python 3.10 or newer could be found` | [1](#1-no-python-310-or-newer-could-be-found) |
 | `No suitable Python runtime found` (from `py`) | [2](#2-no-suitable-python-runtime-found) |
-| `pip install` fails / times out / SSL error | [3](#3-dependency-installation-fails) |
-| `Could not find a version that satisfies PySide6-Essentials` | [4](#4-no-pyside6-wheel-for-your-python) |
-| `ERROR: tests failed - build aborted` | [5](#5-tests-fail) |
-| PyInstaller finishes but the exe does nothing | [6](#6-the-exe-starts-and-immediately-exits) |
-| `Failed to execute script 'main'` / `ModuleNotFoundError` | [7](#7-modulenotfounderror-in-the-frozen-build) |
-| `could not find or load the Qt platform plugin "windows"` | [8](#8-qt-platform-plugin-windows-not-found) |
-| Antivirus deletes the exe | [9](#9-antivirus-quarantines-the-executable) |
-| `WARNING: Inno Setup 6 not found` | [10](#10-inno-setup-not-found) |
-| `Access is denied` / `PermissionError` during the build | [11](#11-access-is-denied-while-building) |
-| Path too long, or the repo lives in OneDrive | [12](#12-long-paths-onedrive-and-non-ascii-folders) |
-| The portable exe takes seconds to start | [13](#13-the-portable-exe-is-slow-to-start) |
-| Build succeeded yesterday, fails today | [14](#14-a-stale-build-venv) |
-| The icon is wrong or missing | [15](#15-the-icon-does-not-appear) |
-| It works here but not on another PC | [16](#16-works-on-the-build-machine-only) |
+| `Could not open requirements file: requirements-dev.txt` | [3](#3-could-not-open-requirements-file) |
+| `pip install` fails / times out / SSL error | [4](#4-dependency-installation-fails) |
+| `Could not find a version that satisfies PySide6-Essentials` | [5](#5-no-pyside6-wheel-for-your-python) |
+| `ERROR: tests failed - build aborted` | [6](#6-tests-fail) |
+| PyInstaller finishes but the exe does nothing | [7](#7-the-exe-starts-and-immediately-exits) |
+| `Failed to execute script 'main'` / `ModuleNotFoundError` | [8](#8-modulenotfounderror-in-the-frozen-build) |
+| `could not find or load the Qt platform plugin "windows"` | [9](#9-qt-platform-plugin-windows-not-found) |
+| Antivirus deletes the exe | [10](#10-antivirus-quarantines-the-executable) |
+| `WARNING: Inno Setup 6 not found` | [11](#11-inno-setup-not-found) |
+| `Access is denied` / `PermissionError` during the build | [12](#12-access-is-denied-while-building) |
+| Path too long, or the repo lives in OneDrive | [13](#13-long-paths-onedrive-and-non-ascii-folders) |
+| The portable exe takes seconds to start | [14](#14-the-portable-exe-is-slow-to-start) |
+| Build succeeded yesterday, fails today | [15](#15-a-stale-build-venv) |
+| The icon is wrong or missing | [16](#16-the-icon-does-not-appear) |
+| It works here but not on another PC | [17](#17-works-on-the-build-machine-only) |
 
 ---
 
@@ -329,13 +331,76 @@ uninstall, or with a Store install. Harmless: the scripts try `py` **last**
 precisely because of this. If you hit it running a command by hand, use
 `python` instead of `py`, or reinstall Python and let it register itself.
 
-### 3. Dependency installation fails
+### 3. `Could not open requirements file`
 
 ```
+ERROR: Could not open requirements file: [Errno 2] No such file or directory: 'requirements-dev.txt'
 ERROR: dependency installation failed. Check your internet connection.
 ```
 
-Run it manually to see the real error:
+The file is in the repository, so this is almost never a download problem —
+the build is looking in the wrong folder, or the working copy is incomplete.
+(Older build scripts printed the misleading "check your internet connection"
+line for this failure, and could mis-detect the project folder. `git pull`
+first — the current ones print the folder they picked and refuse to run if it
+is wrong.)
+
+**Check what the script thinks the project is.** Current versions print it:
+
+```
+=== [1/5] Locating the project ======================================
+Project root: D:\Serial_App
+```
+
+If that says anything else — `D:\`, `D:\..`, your home folder — the root was
+misdetected. Confirm the file really is there and point the script at it:
+
+```bat
+cd /d D:\Serial_App
+dir requirements-dev.txt
+
+set SERIAL_CONSOLE_ROOT=D:\Serial_App
+packaging\build.bat /installer
+```
+
+PowerShell: `$env:SERIAL_CONSOLE_ROOT = 'D:\Serial_App'`.
+
+**If `dir` says the file is not found**, the checkout is incomplete — a partial
+ZIP download, or a clone made before the file existed:
+
+```bat
+git pull
+git status
+```
+
+**Then delete any virtual environment created in the wrong place**, because the
+next run will happily reuse it:
+
+```bat
+rmdir /s /q D:\.build-venv
+```
+
+**Install by hand as a last resort** — the build only needs five packages:
+
+```bat
+.build-venv\Scripts\python -m pip install PySide6-Essentials pyserial pytest pyinstaller
+packaging\build.bat /installer
+```
+
+Current scripts also fall back automatically: if `requirements-dev.txt` is
+missing they install `requirements.txt` plus `pytest` and `pyinstaller`, and
+they refuse to run at all unless the folder they picked contains
+`pyproject.toml` and `serial_console\`.
+
+### 4. Dependency installation fails
+
+```
+ERROR: installing the build dependencies failed (...).
+       Re-running without --quiet so the real error is visible:
+```
+
+The script re-runs the install verbosely so you can read the actual failure.
+To reproduce it yourself:
 
 ```bat
 .build-venv\Scripts\python -m pip install -r requirements-dev.txt
@@ -349,7 +414,7 @@ Run it manually to see the real error:
   `pip config set global.cert C:\path\to\corp-root.pem`
 - **Disk full** → PySide6 needs ~400 MB unpacked.
 
-### 4. No PySide6 wheel for your Python
+### 5. No PySide6 wheel for your Python
 
 ```
 ERROR: Could not find a version that satisfies the requirement PySide6-Essentials
@@ -365,7 +430,7 @@ python -c "import sys, platform; print(sys.version, platform.machine())"
 Install Python **3.12** (the version CI uses) alongside whatever you have and
 build with `/clean`, or on ARM run the x64 build under emulation.
 
-### 5. Tests fail
+### 6. Tests fail
 
 The build aborts on purpose: freezing a broken source tree only moves the
 problem into an `.exe`. See the failure first:
@@ -384,7 +449,7 @@ packaging\build.bat /skiptests
 …but treat that as a temporary measure, and please open an issue with the
 output — the suite is green on Linux and Windows in CI.
 
-### 6. The exe starts and immediately exits
+### 7. The exe starts and immediately exits
 
 The application is built with `console=False`, so a crash before the window
 appears leaves no trace. Get the story out of it:
@@ -400,7 +465,7 @@ message are visible. The log file is at
 
 Nine times out of ten it is a missing hidden import — see the next entry.
 
-### 7. `ModuleNotFoundError` in the frozen build
+### 8. `ModuleNotFoundError` in the frozen build
 
 Something imported at runtime that PyInstaller could not see statically. Add it
 to `hiddenimports` in `packaging/serial_console.spec`:
@@ -419,7 +484,7 @@ The spec already lists every pyserial backend and collects all of
 `serial_console.config.paths.resource_dir()`, which understands PyInstaller's
 `_MEIPASS`.
 
-### 8. Qt platform plugin "windows" not found
+### 9. Qt platform plugin "windows" not found
 
 ```
 This application failed to start because no Qt platform plugin could be initialized.
@@ -434,7 +499,7 @@ This application failed to start because no Qt platform plugin could be initiali
   Qt needs it; Windows 10/11 usually has it already, fresh installs sometimes
   do not.
 
-### 9. Antivirus quarantines the executable
+### 10. Antivirus quarantines the executable
 
 PyInstaller output is a self-extracting binary, which heuristic scanners
 dislike. The spec already sets `upx=False` because UPX compression makes this
@@ -447,7 +512,7 @@ dramatically worse.
 - Prefer the **installer** for distribution: signed or not, it is a far more
   familiar shape to both users and scanners than a bare 45 MB exe.
 
-### 10. Inno Setup not found
+### 11. Inno Setup not found
 
 ```
 WARNING: Inno Setup 6 not found - skipping the installer.
@@ -464,7 +529,7 @@ and on `PATH`. For a non-standard location, call it directly:
 Note the installer packages the **folder build**, so `packaging\dist\SerialCommandConsole\`
 must exist first — always freeze before compiling the installer.
 
-### 11. `Access is denied` while building
+### 12. `Access is denied` while building
 
 - **The app is still running** — close every instance, including one started by
   a previous `--selftest`.
@@ -473,7 +538,7 @@ must exist first — always freeze before compiling the installer.
 - **`.build-venv` is locked** by an activated shell. Deactivate it, or use
   `/usevenv` to build inside it deliberately.
 
-### 12. Long paths, OneDrive and non-ASCII folders
+### 13. Long paths, OneDrive and non-ASCII folders
 
 PyInstaller writes deeply nested temporary paths and can hit the 260-character
 limit. Symptoms are odd `FileNotFoundError`s for files that clearly exist.
@@ -487,7 +552,7 @@ limit. Symptoms are odd `FileNotFoundError`s for files that clearly exist.
     -Name LongPathsEnabled -Value 1 -PropertyType DWORD -Force
   ```
 
-### 13. The portable exe is slow to start
+### 14. The portable exe is slow to start
 
 Expected: a one-file build unpacks ~110 MB into `%TEMP%` on every launch, which
 costs 1–3 seconds (more with an aggressive antivirus). It is the price of a
@@ -496,7 +561,7 @@ single file.
 Use the **folder build** or the **installer** when startup time matters — they
 start in well under a second.
 
-### 14. A stale `.build-venv`
+### 15. A stale `.build-venv`
 
 The build worked yesterday and fails today with weird import or version errors,
 typically after upgrading Python or switching branches:
@@ -507,7 +572,7 @@ packaging\build.bat /clean
 
 That deletes `.build-venv` and rebuilds it from `requirements-dev.txt`.
 
-### 15. The icon does not appear
+### 16. The icon does not appear
 
 - Windows caches icons aggressively. Rename the exe, or clear the cache:
   `ie4uinit.exe -show`.
@@ -517,9 +582,9 @@ That deletes `.build-venv` and rebuilds it from `requirements-dev.txt`.
 - A multi-resolution `.ico` (16/32/48/256 px) is required for a clean look in
   every Explorer view; `make_icon.py` produces exactly that.
 
-### 16. Works on the build machine only
+### 17. Works on the build machine only
 
-- Missing **VC++ 2015-2022 Redistributable (x64)** on the target — see [8](#8-qt-platform-plugin-windows-not-found).
+- Missing **VC++ 2015-2022 Redistributable (x64)** on the target — see [9](#9-qt-platform-plugin-windows-not-found).
 - You copied `SerialCommandConsole.exe` out of the **folder** build without the
   rest of the folder. Send the portable exe or the whole folder.
 - The target is 32-bit Windows or ARM; these builds are x64.
