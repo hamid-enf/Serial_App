@@ -8,7 +8,6 @@ different ways, plus what to do when each of them goes wrong.
 ```bat
 git clone https://github.com/hamid-enf/Serial_App.git
 cd Serial_App
-git checkout arena/01a06db5-serial-app
 packaging\build.bat /installer
 ```
 
