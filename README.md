@@ -1,5 +1,13 @@
 # ENF Serial Command Console
 
+[![Tests](https://github.com/hamid-enf/Serial_App/actions/workflows/tests.yml/badge.svg)](https://github.com/hamid-enf/Serial_App/actions/workflows/tests.yml)
+[![Windows build](https://github.com/hamid-enf/Serial_App/actions/workflows/build-windows.yml/badge.svg)](https://github.com/hamid-enf/Serial_App/actions/workflows/build-windows.yml)
+[![Latest release](https://img.shields.io/github/v/release/hamid-enf/Serial_App?display_name=tag&sort=semver)](https://github.com/hamid-enf/Serial_App/releases/latest)
+[![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776ab?logo=python&logoColor=white)](pyproject.toml)
+[![Built with PySide6](https://img.shields.io/badge/GUI-PySide6-41cd52?logo=qt&logoColor=white)](https://doc.qt.io/qtforpython/)
+[![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)](#running-from-source)
+
 <sub>An **ENF** project · MIT licensed · [github.com/hamid-enf/Serial_App](https://github.com/hamid-enf/Serial_App)</sub>
 
 A professional serial terminal for Windows (and Linux/macOS), built as a replacement for the
@@ -32,7 +40,8 @@ line ending and optional auto-repeat.
 - [Building the Windows executable](#building-the-windows-executable)
 - [Troubleshooting](#troubleshooting)
 - [Design notes and deliberate deviations](#design-notes-and-deliberate-deviations)
-- [Licence](#licence)
+- [Contributing and support](#contributing-and-support)
+- [Licence and credits](#licence-and-credits)
 
 ---
 
@@ -572,6 +581,17 @@ The specification asked for a note wherever a requirement could be improved on. 
 Known limitations, stated plainly: the binaries are unsigned; auto-send intervals below ~20 ms
 are clamped because Qt timers cannot be trusted below that; and while the app runs happily on
 Linux and macOS, only the Windows path is packaged and tested end-to-end.
+
+---
+
+## Contributing and support
+
+- **Bugs and ideas:** open an [issue](https://github.com/hamid-enf/Serial_App/issues/new/choose)
+  — the templates ask for the OS, device and log file, which is usually what a diagnosis needs.
+- **Pull requests:** please read [CONTRIBUTING.md](CONTRIBUTING.md) first; it covers the
+  development setup, the layering rules and the checks CI runs.
+- **Security issues:** report them privately, see [SECURITY.md](SECURITY.md).
+- **Conduct:** participation is governed by [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 ---
 

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Usage guide and troubleshooting
+    url: https://github.com/hamid-enf/Serial_App#troubleshooting
+    about: Port not listed, garbled text, "port may be in use" — start here.
+  - name: Security vulnerability
+    url: https://github.com/hamid-enf/Serial_App/security/advisories/new
+    about: Please report security issues privately, not as a public issue.

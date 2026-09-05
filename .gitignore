@@ -44,3 +44,6 @@ config.corrupt-*.json
 *.swp
 .DS_Store
 Thumbs.db
+
+# Promotional render output (large binaries live outside Git)
+/promo/
