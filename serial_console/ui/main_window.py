@@ -329,7 +329,11 @@ class MainWindow(QMainWindow):
         config = self._config
         self.connection_bar.apply_settings(config.serial)
         self.terminal.apply_settings(config.terminal, config.appearance.theme)
-        self.terminal.apply_font(config.appearance.font_family, config.appearance.font_size)
+        self.terminal.apply_font(
+            config.appearance.font_family,
+            config.appearance.font_size,
+            config.appearance.line_spacing,
+        )
         self.send_panel.set_line_ending(config.terminal.line_ending)
         self.send_panel.input.setFont(
             self.terminal.output.font()
@@ -553,7 +557,12 @@ class MainWindow(QMainWindow):
     @slot(str, bool, object)
     def _on_manual_send(self, text: str, hex_mode: bool, line_ending: LineEnding) -> None:
         try:
-            payload = build_payload(text, hex_mode=hex_mode, line_ending=line_ending)
+            payload = build_payload(
+                text,
+                hex_mode=hex_mode,
+                line_ending=line_ending,
+                encoding=self._config.terminal.encoding,
+            )
         except ValidationError as exc:
             self.send_panel.show_error(str(exc))
             self._show_banner(UserError(message=str(exc), severity=Severity.WARNING))
@@ -583,7 +592,10 @@ class MainWindow(QMainWindow):
         ending = button.resolved_line_ending(self.send_panel.line_ending())
         try:
             payload = build_payload(
-                button.command, hex_mode=button.hex_mode, line_ending=ending
+                button.command,
+                hex_mode=button.hex_mode,
+                line_ending=ending,
+                encoding=self._config.terminal.encoding,
             )
         except ValidationError as exc:
             self._show_banner(
@@ -1026,7 +1038,9 @@ class MainWindow(QMainWindow):
         self.terminal.set_theme(theme)
         self.terminal.apply_settings(self._config.terminal, theme)
         self.terminal.apply_font(
-            self._config.appearance.font_family, self._config.appearance.font_size
+            self._config.appearance.font_family,
+            self._config.appearance.font_size,
+            self._config.appearance.line_spacing,
         )
         self.send_panel.input.setFont(self.terminal.output.font())
         self.send_panel.set_line_ending(self._config.terminal.line_ending)

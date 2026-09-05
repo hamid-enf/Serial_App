@@ -125,7 +125,8 @@ class TerminalBuffer:
             encoding=encoding,
             hex_bytes_per_line=hex_bytes_per_line,
         )
-        return "".join(renderer.render(chunk) for chunk in self._chunks)
+        rendered = "".join(renderer.render(chunk) for chunk in self._chunks)
+        return rendered + renderer.flush()
 
     def to_raw_bytes(self, directions: Sequence[Direction] | None = None) -> bytes:
         """Concatenate raw payload bytes, for binary export."""
@@ -199,6 +200,7 @@ class TerminalRenderer:
 
     __slots__ = (
         "_at_line_start",
+        "_decoders",
         "_display_mode",
         "_encoding",
         "_hex_bytes_per_line",
@@ -220,6 +222,10 @@ class TerminalRenderer:
         self._hex_bytes_per_line = max(1, int(hex_bytes_per_line))
         self._at_line_start = True
         self._last_direction: Direction | None = None
+        # One incremental decoder per direction: a multi-byte character split
+        # across two reads must be reassembled, and an unfinished RX character
+        # must not be completed by the next TX echo.
+        self._decoders: dict[Direction, codec.StreamDecoder] = {}
 
     # ------------------------------------------------------------------
     @property
@@ -229,6 +235,23 @@ class TerminalRenderer:
     def reset(self) -> None:
         self._at_line_start = True
         self._last_direction = None
+        self._decoders.clear()
+
+    def _decode(self, direction: Direction, data: bytes) -> str:
+        decoder = self._decoders.get(direction)
+        if decoder is None:
+            decoder = codec.StreamDecoder(self._encoding)
+            self._decoders[direction] = decoder
+        return decoder.decode(data)
+
+    def flush(self) -> str:
+        """Emit any bytes still held back as an incomplete character.
+
+        Only meaningful at the end of a finite render (an export, a full
+        re-render); the live view simply waits for the rest to arrive.
+        """
+        tail = "".join(decoder.flush() for decoder in self._decoders.values())
+        return tail
 
     # ------------------------------------------------------------------
     def render(self, chunk: TerminalChunk) -> str:
@@ -245,6 +268,7 @@ class TerminalRenderer:
         self._last_direction = chunk.direction
 
         if chunk.direction in (Direction.INFO, Direction.ERROR):
+            # Locally generated text: always complete, never a partial character.
             body = self._render_line_oriented(
                 codec.decode_text(chunk.data, self._encoding), chunk.timestamp
             )
@@ -259,7 +283,7 @@ class TerminalRenderer:
             )
         else:
             body = self._render_line_oriented(
-                codec.decode_text(chunk.data, self._encoding), chunk.timestamp
+                self._decode(chunk.direction, chunk.data), chunk.timestamp
             )
         return prefix + body
 

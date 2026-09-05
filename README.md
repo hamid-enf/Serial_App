@@ -42,6 +42,7 @@ same folder). Every frame is the real application, rendered from the source by
 - [Project structure](#project-structure)
 - [Architecture](#architecture)
 - [Staying fast in a long session](#staying-fast-in-a-long-session)
+- [Unicode, Persian and fonts](#unicode-persian-and-fonts)
 - [Testing](#testing)
 - [Building the Windows executable](#building-the-windows-executable)
 - [Troubleshooting](#troubleshooting)
@@ -460,19 +461,86 @@ python scripts/bench_terminal.py --rate 250000 --window         # the whole wind
 python scripts/bench_terminal.py --rate 250000 --slow 6         # simulate a slow PC
 ```
 
-| Scenario (60 s session) | UI thread spent on the log | Frame cost, first → last sixth |
+| Scenario (40 s session) | UI thread spent on the log | Frame cost, first → last sixth |
 | --- | --- | --- |
-| 115200 baud | 9.7 % | 3.16 → 3.22 ms (×1.02) |
+| 115200 baud | 10.0 % | 3.18 → 3.42 ms (×1.07) |
 | 921600 baud | 12.7 % | 3.89 → 4.35 ms (×1.12) |
-| 2 Mbit/s (250 kB/s) | 16.3 % | 4.81 → 5.43 ms (×1.13) |
-| 2 Mbit/s, Hex+ASCII | 36.3 % | 10.70 → 13.95 ms (×1.30) |
-| 8 Mbit/s (1 MB/s) | 32.2 % | 9.95 → 10.75 ms (×1.08) |
-| 2 Mbit/s on a 6× slower machine | 37.3 % (was 51 %) | 12.77 → 14.69 ms (×1.15) |
+| 2 Mbit/s (250 kB/s) | 17.5 % | 5.07 → 5.65 ms (×1.11) |
+| 2 Mbit/s, Hex+ASCII | 36.6 % | 11.17 → 12.27 ms (×1.10) |
+| 8 Mbit/s (1 MB/s) | 34.0 % | 9.76 → 11.51 ms (×1.18) |
+| 2 Mbit/s on a 6× slower machine | 38.5 % (was 51 %) | 13.51 → 15.07 ms (×1.12) |
 
 The last row is the one that matters: without the adaptive refresh the same machine
 spends half its time drawing and the worst frame doubles. The cost stays flat as the
 session grows, which is the whole point — a session that has been running for an hour
 renders no slower than one that started a minute ago.
+
+**Where the time goes now.** Profiling a 400-frame run at 3 000 lines/s, 95 % of the
+remaining cost is inside Qt and ~2 % is this project's Python:
+
+| | share of a frame |
+| --- | --- |
+| `QTextCursor.endEditBlock` (document edit, trimming, relayout) | 41 % |
+| repainting the viewport | 26 % |
+| scrolling to the bottom | 13 % |
+| the rest of the event loop | 11 % |
+| `insertText` | 5 % |
+| rendering chunks to text (all of this project's own code) | ~2 % |
+
+Which is the honest limit of `QPlainTextEdit`. Going materially faster would mean
+replacing it with a custom-painted, virtualised log widget that draws only the visible
+lines from a ring buffer — perhaps 5–10× cheaper, but it would have to reimplement
+selection, copy, find and the scrollbar, so it is not a trade worth making until the
+current design demonstrably falls short.
+
+**One more thing the pane does for you:** while you are scrolled up reading history, the
+page now stays *still*. The block cap trims from the top as data arrives, which used to
+drag the text you were reading upward — after 4 000 new lines you would be looking at a
+completely different part of the log. The scroll position is now compensated for exactly
+the number of trimmed lines.
+
+---
+
+## Unicode, Persian and fonts
+
+Serial devices do not only speak ASCII. This one handles what they actually send.
+
+**Multi-byte characters are decoded across chunk boundaries.** A port hands over
+whatever was in the driver buffer when the reader woke up, so a two-byte Persian letter
+is regularly split between two reads. Decoding each read on its own turns roughly *half*
+of all Persian, Arabic, Cyrillic, CJK and emoji characters into `�`. The renderer keeps
+one incremental decoder per direction, holds the incomplete tail and finishes the
+character when the rest arrives — correct even when the device sends one byte at a time.
+An unfinished RX character is never completed by a TX echo, because the two have
+separate decoders.
+
+**Persian lines keep the log's shape.** Qt takes paragraph direction from the first
+strong character, so a Persian line would otherwise flip right and drag its timestamp
+with it. Paragraph direction is pinned left-to-right — the same choice VS Code and every
+terminal emulator makes — so timestamps and columns stay put while the Persian words
+inside a line still shape and read right-to-left.
+
+**Fonts fall back to something that has the glyph.** No monospace font covers Persian,
+box drawing and emoji at once, so the terminal font is built as a *list*: the resolved
+monospace face first (Cascadia Mono → Consolas → JetBrains Mono → … → Courier New),
+then Vazirmatn, Segoe UI, Tahoma, Noto Sans Arabic, DejaVu Sans and the emoji faces for
+anything it lacks. On Qt 6.8+ substitution is decided per script run rather than per
+character, so a Persian word is drawn in one face instead of being stitched together.
+Full hinting and antialiasing are requested explicitly, which is what keeps small
+monospace text crisp on Windows.
+
+**Line spacing is a setting.** Terminal output is dense, and Persian and Arabic reach
+further above and below the line than Latin does. The default is 118 % of the font's
+natural height; Settings → Appearance → Line Spacing takes anything from 100 % to 200 %.
+
+**Sending mirrors receiving.** Typed text is encoded with the terminal's own encoding,
+so a device that speaks cp1256 gets cp1256 — a round trip through a device that echoes
+now returns exactly what was typed. UTF-8 remains the default and covers Persian
+without any configuration; `Settings → Terminal → Text Encoding` also offers cp1256,
+cp1252, latin-1, UTF-16LE, Shift-JIS and anything else Python knows by name.
+
+> Exports are unaffected by all of this: `to_raw_bytes()` writes the original bytes,
+> and the CSV and TXT exports use the same renderer as the screen.
 
 ---
 
@@ -480,7 +548,7 @@ renders no slower than one that started a minute ago.
 
 ```bash
 pip install -r requirements-dev.txt
-pytest tests -q                                    # 387 tests, ~22 s
+pytest tests -q                                    # 411 tests, ~22 s
 pytest tests -q --cov=serial_console --cov-report=term-missing
 pytest tests -m "not gui" -q                       # skip the Qt tests
 

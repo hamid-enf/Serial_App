@@ -308,3 +308,52 @@ class TestRendererFastPaths:
             TerminalChunk(direction=Direction.RX, data=b"data", timestamp=2.0),
         ]
         assert renderer.render_runs(chunks) == [(Direction.RX, "data")]
+
+
+class TestUnicodeStreams:
+    """Non-ASCII text must survive arbitrary chunk boundaries end to end."""
+
+    PERSIAN = "دمای سنسور: ۲۴٫۸ درجه\nوضعیت: متصل\n"
+
+    def test_persian_survives_every_frame_boundary(self) -> None:
+        raw = self.PERSIAN.encode()
+        for cut in range(1, len(raw)):
+            buffer = TerminalBuffer(1024 * 1024)
+            renderer = TerminalRenderer()
+            out = []
+            for piece in (raw[:cut], raw[cut:]):
+                for chunk in buffer.append(Direction.RX, piece):
+                    out.append(renderer.render(chunk))
+            assert "".join(out) == self.PERSIAN, f"boundary at byte {cut}"
+
+    def test_a_tx_echo_cannot_complete_a_partial_rx_character(self) -> None:
+        renderer = TerminalRenderer()
+        head, tail = "د".encode()[:1], "د".encode()[1:]
+        assert renderer.render(
+            TerminalChunk(direction=Direction.RX, data=head, timestamp=1.0)
+        ) == ""
+        # TX arrives in between and must be decoded on its own.
+        assert "AT" in renderer.render(
+            TerminalChunk(direction=Direction.TX, data=b"AT\n", timestamp=2.0)
+        )
+        assert "د" in renderer.render(
+            TerminalChunk(direction=Direction.RX, data=tail, timestamp=3.0)
+        )
+
+    def test_full_buffer_render_matches_the_streamed_text(self) -> None:
+        buffer = TerminalBuffer(1024 * 1024)
+        renderer = TerminalRenderer()
+        streamed = []
+        raw = self.PERSIAN.encode()
+        for index in range(0, len(raw), 3):
+            for chunk in buffer.append(Direction.RX, raw[index : index + 3]):
+                streamed.append(renderer.render(chunk))
+        assert "".join(streamed) + renderer.flush() == self.PERSIAN
+        assert buffer.render() == self.PERSIAN
+
+    def test_export_keeps_the_original_bytes(self) -> None:
+        buffer = TerminalBuffer(1024 * 1024)
+        raw = self.PERSIAN.encode()
+        for index in range(0, len(raw), 5):
+            buffer.append(Direction.RX, raw[index : index + 5])
+        assert buffer.to_raw_bytes() == raw

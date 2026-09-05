@@ -212,3 +212,32 @@ class TestMigrations:
     def test_current_version_is_untouched(self) -> None:
         data = {"schema_version": SCHEMA_VERSION, "profiles": []}
         assert migrate(dict(data))["schema_version"] == SCHEMA_VERSION
+
+
+class TestTypographySettings:
+    def test_line_spacing_round_trips(self, tmp_path) -> None:
+        from serial_console.config.store import ConfigStore
+        from serial_console.models.settings import AppConfig
+
+        path = tmp_path / "config.json"
+        config = AppConfig.create_default()
+        config.appearance.line_spacing = 145
+        ConfigStore(path).save(config)
+        assert ConfigStore(path).load().config.appearance.line_spacing == 145
+
+    def test_line_spacing_is_clamped_when_hand_edited(self) -> None:
+        from serial_console.models.settings import AppearanceSettings
+
+        assert AppearanceSettings.from_dict({"line_spacing": 9000}).line_spacing == 200
+        assert AppearanceSettings.from_dict({"line_spacing": 3}).line_spacing == 100
+        assert AppearanceSettings.from_dict({}).line_spacing == 118
+
+    def test_out_of_range_line_spacing_is_rejected_by_validation(self) -> None:
+        import pytest
+
+        from serial_console.models.errors import ValidationError
+        from serial_console.models.settings import AppearanceSettings
+
+        settings = AppearanceSettings(line_spacing=400)
+        with pytest.raises(ValidationError):
+            settings.validate()

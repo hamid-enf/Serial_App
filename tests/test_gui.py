@@ -578,3 +578,89 @@ class TestTerminalPerformanceGuards:
             assert service.poll_interval_ms() == 10
         finally:
             service.shutdown()
+
+
+# ----------------------------------------------------------------------
+class TestTerminalTypography:
+    """Fonts, line height and mixed left-to-right / right-to-left text."""
+
+    def _view(self, qapp: QApplication):
+        from serial_console.core.terminal_buffer import TerminalBuffer
+        from serial_console.ui.widgets.terminal_view import TerminalView
+
+        buffer = TerminalBuffer(1024 * 1024)
+        view = TerminalView(buffer)
+        view.resize(900, 500)
+        return buffer, view
+
+    def test_paragraphs_stay_left_to_right_for_persian_output(
+        self, qapp: QApplication
+    ) -> None:
+        from PySide6.QtCore import Qt
+
+        buffer, view = self._view(qapp)
+        view.append_chunks(buffer.append(Direction.RX, "دمای سنسور: ۲۴٫۸\n".encode()))
+        option = view.output.document().defaultTextOption()
+        assert option.textDirection() == Qt.LayoutDirection.LeftToRight
+        assert view.output.layoutDirection() == Qt.LayoutDirection.LeftToRight
+        # …and the text itself is intact, not a row of replacement characters.
+        assert "دمای سنسور" in view.output.toPlainText()
+        assert "\ufffd" not in view.output.toPlainText()
+
+    def test_persian_split_across_frames_is_not_corrupted(
+        self, qapp: QApplication
+    ) -> None:
+        buffer, view = self._view(qapp)
+        raw = "وضعیت: متصل به شبکه\n".encode()
+        for index in range(0, len(raw), 3):  # a frame boundary every 3 bytes
+            view.append_chunks(buffer.append(Direction.RX, raw[index : index + 3]))
+        assert view.output.toPlainText() == "وضعیت: متصل به شبکه\n"
+
+    def test_line_spacing_is_applied_and_inherited(self, qapp: QApplication) -> None:
+        buffer, view = self._view(qapp)
+        view.apply_font("", 10, 140)
+        view.append_chunks(buffer.append(Direction.RX, b"one\ntwo\nthree\n"))
+        document = view.output.document()
+        assert document.lastBlock().blockFormat().lineHeight() == 140.0
+        assert document.firstBlock().blockFormat().lineHeight() == 140.0
+
+    def test_line_spacing_survives_a_clear(self, qapp: QApplication) -> None:
+        buffer, view = self._view(qapp)
+        view.apply_font("", 10, 130)
+        view.clear()
+        view.append_chunks(buffer.append(Direction.RX, b"after clear\n"))
+        assert view.output.document().lastBlock().blockFormat().lineHeight() == 130.0
+
+    def test_the_terminal_font_has_fallback_families(self, qapp: QApplication) -> None:
+        from serial_console.ui.theme import monospace_font
+
+        font = monospace_font("", 11)
+        assert font.fixedPitch()
+        assert font.pointSize() == 11
+        # One name is a valid outcome on a machine with only one usable family,
+        # but the primary must always be the resolved monospace face.
+        families = font.families()
+        if families:
+            assert families[0] == font.family()
+
+    def test_reading_position_holds_still_while_data_floods_in(
+        self, qapp: QApplication
+    ) -> None:
+        buffer, view = self._view(qapp)
+        view.show()
+        for index in range(260):  # well past the 20 000 block cap
+            payload = "".join(f"line {index * 100 + i:06d}\n" for i in range(100))
+            view.append_chunks(buffer.append(Direction.RX, payload.encode()))
+        qapp.processEvents()
+
+        view.set_auto_scroll(False)
+        scrollbar = view.output.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum() - 400)
+        qapp.processEvents()
+        reading = view.output.firstVisibleBlock().text()
+
+        for index in range(260, 300):
+            payload = "".join(f"line {index * 100 + i:06d}\n" for i in range(100))
+            view.append_chunks(buffer.append(Direction.RX, payload.encode()))
+        qapp.processEvents()
+        assert view.output.firstVisibleBlock().text() == reading

@@ -176,6 +176,12 @@ class AppearanceSettings:
     font_family: str = ""
     """Empty means "pick the best available monospace font at runtime"."""
     font_size: int = 10
+    line_spacing: int = 118
+    """Terminal line height as a percentage of the font's natural height.
+
+    Dense log output is markedly easier to scan with a little air between the
+    lines, and Persian or Arabic text — whose ascenders and descenders reach
+    further than Latin — needs it to avoid clipping."""
     command_button_columns: int = 2
     window_geometry: str = ""
     window_state: str = ""
@@ -183,6 +189,8 @@ class AppearanceSettings:
     def validate(self) -> None:
         if not 6 <= self.font_size <= 32:
             raise ValidationError("Font size must be between 6 and 32.")
+        if not 100 <= self.line_spacing <= 200:
+            raise ValidationError("Line spacing must be between 100 % and 200 %.")
         if not 1 <= self.command_button_columns <= 8:
             raise ValidationError("Command button columns must be between 1 and 8.")
 
@@ -191,6 +199,7 @@ class AppearanceSettings:
             "theme": enum_value(self.theme),
             "font_family": self.font_family,
             "font_size": self.font_size,
+            "line_spacing": self.line_spacing,
             "command_button_columns": self.command_button_columns,
             "window_geometry": self.window_geometry,
             "window_state": self.window_state,
@@ -204,6 +213,7 @@ class AppearanceSettings:
             theme=Theme.coerce(data.get("theme"), Theme.DARK),
             font_family=str(data.get("font_family") or ""),
             font_size=_clamp(_as_int(data.get("font_size"), 10), 6, 32),
+            line_spacing=_clamp(_as_int(data.get("line_spacing"), 118), 100, 200),
             command_button_columns=_clamp(
                 _as_int(data.get("command_button_columns"), 2), 1, 8
             ),

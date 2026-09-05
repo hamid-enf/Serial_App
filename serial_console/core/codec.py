@@ -7,6 +7,7 @@ never leaks into the text path: :func:`build_payload` is the single place where
 
 from __future__ import annotations
 
+import codecs
 import re
 import string
 from collections.abc import Iterable
@@ -120,14 +121,80 @@ def decode_text(data: bytes, encoding: str = "utf-8") -> str:
         return data.decode("utf-8", errors="replace")
 
 
-def build_payload(text: str, *, hex_mode: bool, line_ending: LineEnding) -> bytes:
+class StreamDecoder:
+    """Decodes a byte *stream* whose chunk boundaries are arbitrary.
+
+    A serial port delivers whatever happened to be in the driver buffer when
+    the reader thread woke up, so a multi-byte character is regularly split
+    across two reads. Decoding each chunk on its own then turns roughly *half*
+    of all Persian, Arabic, Cyrillic, CJK or emoji characters into ``�`` — the
+    text is fine on the wire and fine in the export, but visibly corrupt on
+    screen.
+
+    An incremental decoder holds the incomplete tail until the rest of the
+    character arrives, which is the only correct way to display a stream.
+    Malformed bytes still become ``�`` rather than raising, so binary data
+    dumped in text mode remains harmless.
+    """
+
+    __slots__ = ("_decoder", "_encoding")
+
+    def __init__(self, encoding: str = "utf-8") -> None:
+        self._encoding = encoding or "utf-8"
+        self._decoder = self._make(self._encoding)
+
+    @staticmethod
+    def _make(encoding: str) -> codecs.IncrementalDecoder:
+        try:
+            factory = codecs.getincrementaldecoder(encoding)
+        except LookupError:
+            factory = codecs.getincrementaldecoder("utf-8")
+        return factory("replace")
+
+    @property
+    def encoding(self) -> str:
+        return self._encoding
+
+    def decode(self, data: bytes, *, final: bool = False) -> str:
+        """Decode ``data``, carrying any incomplete character forward."""
+        try:
+            return self._decoder.decode(data, final)
+        except UnicodeDecodeError:  # pragma: no cover - defensive
+            return data.decode(self._encoding, errors="replace")
+
+    def flush(self) -> str:
+        """Emit whatever is left over, e.g. at the end of an export."""
+        return self.decode(b"", final=True)
+
+    def reset(self) -> None:
+        self._decoder.reset()
+
+
+def build_payload(
+    text: str,
+    *,
+    hex_mode: bool,
+    line_ending: LineEnding,
+    encoding: str = "utf-8",
+) -> bytes:
     """Turn user input into the exact byte sequence to transmit.
 
     In hex mode the line ending is still appended, because devices that accept
     binary framing often still expect a terminator; users who do not want one
     select ``None``.
+
+    ``encoding`` is the terminal's text encoding, so a device that speaks
+    cp1256 or latin-1 receives what it expects rather than UTF-8 — sending has
+    to mirror receiving, otherwise a device that echoes back what it was sent
+    would show a different string than the one that was typed.
     """
-    payload = parse_hex(text) if hex_mode else text.encode("utf-8", errors="replace")
+    if hex_mode:
+        payload = parse_hex(text)
+    else:
+        try:
+            payload = text.encode(encoding or "utf-8", errors="replace")
+        except LookupError:
+            payload = text.encode("utf-8", errors="replace")
     return payload + line_ending.suffix
 
 

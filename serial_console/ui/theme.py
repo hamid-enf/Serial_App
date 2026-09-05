@@ -16,15 +16,33 @@ _log = get_logger(__name__)
 
 #: Preferred monospace faces, best first.  The first one installed wins.
 _MONO_CANDIDATES = (
-    "Cascadia Mono",
-    "Cascadia Code",
+    "Cascadia Mono",      # Windows 11 / Windows Terminal, excellent hinting
+    "Consolas",           # every Windows since Vista
     "JetBrains Mono",
-    "Consolas",
-    "SF Mono",
+    "Cascadia Code",
+    "SF Mono",            # macOS
     "Menlo",
-    "DejaVu Sans Mono",
+    "DejaVu Sans Mono",   # Linux, and the widest glyph coverage of the list
+    "Noto Sans Mono",
     "Liberation Mono",
-    "Courier New",
+    "Courier New",        # last resort: present everywhere, pretty nowhere
+)
+
+#: Families asked to supply glyphs the monospace font does not have. Qt walks
+#: this list per character (per *script* run on Qt 6.8+), so Persian, Arabic,
+#: Cyrillic, CJK and box-drawing characters render properly instead of turning
+#: into hollow boxes when the terminal font has no coverage for them.
+_FALLBACK_CANDIDATES = (
+    "Vazirmatn",          # if the user installed a proper Persian font
+    "Sahel",
+    "Segoe UI",           # Windows: full Arabic/Persian coverage
+    "Tahoma",             # the classic Windows Persian face
+    "Noto Sans Arabic",
+    "Noto Sans",
+    "DejaVu Sans",
+    "Arial Unicode MS",
+    "Segoe UI Emoji",
+    "Noto Color Emoji",
 )
 
 
@@ -112,10 +130,34 @@ def resolve_monospace_family(preferred: str = "") -> str:
     return fallback.family()
 
 
+def _available_fallbacks() -> list[str]:
+    families = set(QFontDatabase.families())
+    return [name for name in _FALLBACK_CANDIDATES if name in families]
+
+
 def monospace_font(family: str = "", size: int = 10) -> QFont:
-    """Build the terminal font."""
-    font = QFont(resolve_monospace_family(family))
+    """Build the terminal font, with fallbacks for glyphs it does not have.
+
+    A serial device can send anything — Persian status text, a degree sign, a
+    box-drawing frame — and no monospace font covers all of it. Listing the
+    fallbacks explicitly means Qt reaches for a *good* face when the terminal
+    font comes up short, instead of whatever the system picks first.
+    """
+    primary = resolve_monospace_family(family)
+    font = QFont(primary)
+    fallbacks = [name for name in _available_fallbacks() if name != primary]
+    if fallbacks:
+        font.setFamilies([primary, *fallbacks])
     font.setPointSize(max(6, int(size)))
     font.setStyleHint(QFont.StyleHint.Monospace)
     font.setFixedPitch(True)
+    # Crisper stems at the small sizes a terminal is read at, and — on Qt 6.8+
+    # — font substitution decided per script run rather than per character, so
+    # a Persian word keeps one face instead of being stitched from several.
+    strategy = QFont.StyleStrategy.PreferAntialias
+    context_merging = getattr(QFont.StyleStrategy, "ContextFontMerging", None)
+    if context_merging is not None:
+        strategy |= context_merging
+    font.setStyleStrategy(strategy)
+    font.setHintingPreference(QFont.HintingPreference.PreferFullHinting)
     return font

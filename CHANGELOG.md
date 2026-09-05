@@ -6,6 +6,27 @@ the project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Correct handling of multi-byte characters split across reads.** The renderer keeps
+  an incremental decoder per direction, so Persian, Arabic, Cyrillic, CJK and emoji
+  survive an arbitrary chunk boundary — previously about half of all such characters
+  were shown as `�` when a frame boundary landed inside them. Verified at every split
+  position, down to one byte at a time.
+- **Persian and Arabic display properly.** Paragraph direction is pinned left-to-right
+  so timestamps and columns keep their place while the text itself shapes and reads
+  right-to-left.
+- **Font fallback chain.** The terminal font is now a list — the resolved monospace
+  face followed by Vazirmatn, Segoe UI, Tahoma, Noto Sans Arabic, DejaVu Sans and the
+  emoji faces — with per-script substitution on Qt 6.8+, full hinting and explicit
+  antialiasing. Glyphs the terminal font lacks come from a good face instead of
+  whatever the system picks first.
+- **Line spacing setting** (Settings → Appearance, 100–200 %, default 118 %), which
+  makes dense logs easier to scan and gives Persian ascenders and descenders room.
+- `cp1256` (Windows Persian/Arabic) added to the encoding list, and typed text is now
+  encoded with the terminal's encoding rather than always UTF-8 — so a device that
+  echoes returns exactly what was typed.
+
 ### Changed
 
 - **The receive pane now paces itself.** Each display update measures its own cost
@@ -31,6 +52,12 @@ the project uses [semantic versioning](https://semver.org/).
 - **An idle connection backs its poll timer off** from 33 ms to 150 ms, so a connected
   but silent port costs almost no CPU. The first byte restores the fast rate.
 - Status-bar labels are only repainted when their text actually changes.
+- **The page stays still while you read history.** With auto-scroll off, the scroll
+  position is compensated for the lines the block cap trims away; previously 4 000
+  incoming lines would drag the text being read completely off screen.
+- The scrollbar is no longer re-pinned to the bottom on every frame when it is already
+  there — Qt keeps a bottom-anchored view pinned by itself, and the redundant call cost
+  a scroll and a repaint each time (13 % of a frame, by profile).
 
 ### Added
 
@@ -46,6 +73,9 @@ the project uses [semantic versioning](https://semver.org/).
 
 - A single chunk larger than the flood threshold used to be rendered in full, so one
   64 KB burst could stall a frame the guard was supposed to protect.
+- Non-ASCII text was corrupted whenever a character straddled a read boundary.
+- A full re-render or export could drop a trailing incomplete character; the renderer
+  now flushes it.
 
 ## [1.0.0] — 2026-09-04
 

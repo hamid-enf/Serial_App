@@ -6,7 +6,13 @@ import time
 from collections.abc import Sequence
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont, QTextCharFormat, QTextCursor, QTextOption
+from PySide6.QtGui import (
+    QFont,
+    QTextBlockFormat,
+    QTextCharFormat,
+    QTextCursor,
+    QTextOption,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -37,6 +43,10 @@ MAX_DISPLAY_BLOCKS = 20000
 #: Ceiling for a full re-render (a settings change, or restoring a minimised
 #: window).  Beyond this only the newest text is rebuilt, with a note saying so.
 RERENDER_BUDGET_BYTES = 4 * 1024 * 1024
+
+#: ``QTextBlockFormat.LineHeightTypes.ProportionalHeight`` as the plain int the
+#: PySide6 overload expects.
+_PROPORTIONAL_HEIGHT = int(QTextBlockFormat.LineHeightTypes.ProportionalHeight.value)
 
 
 class _LogOutput(QPlainTextEdit):
@@ -82,6 +92,7 @@ class TerminalView(QWidget):
         self._suppress_signals = False
         self._budget = RenderBudget()
         self._governor = FrameGovernor()
+        self._line_spacing = 118
         self._skipped_bytes = 0
         self._flood_announced = False
         self._pending_restore = False
@@ -164,6 +175,8 @@ class TerminalView(QWidget):
         self.output.setCenterOnScroll(False)
         self.output.setContextMenuPolicy(Qt.ContextMenuPolicy.DefaultContextMenu)
         self.output.setFont(monospace_font())
+        self._apply_line_spacing()
+        self._force_ltr_paragraphs()
         # Scrolling by hand should stop the view chasing the tail, exactly like
         # a terminal emulator.
         self.output.verticalScrollBar().sliderPressed.connect(self._on_user_scroll)
@@ -189,9 +202,47 @@ class TerminalView(QWidget):
         self._rebuild_formats()
         self.rerender()
 
-    def apply_font(self, family: str, size: int) -> None:
+    def apply_font(self, family: str, size: int, line_spacing: int = 0) -> None:
         font: QFont = monospace_font(family, size)
         self.output.setFont(font)
+        if line_spacing:
+            self._line_spacing = max(100, min(200, int(line_spacing)))
+        self._apply_line_spacing(whole_document=True)
+        self._force_ltr_paragraphs()
+
+    def _apply_line_spacing(self, *, whole_document: bool = False) -> None:
+        """Set the terminal's line height.
+
+        Qt has no document-wide line-height property, but a new block inherits
+        the format of the block it is created from — so setting it on the last
+        block is enough for everything appended afterwards, and the whole
+        document only has to be touched when the setting itself changes.
+        """
+        block_format = QTextBlockFormat()
+        block_format.setLineHeight(float(self._line_spacing), _PROPORTIONAL_HEIGHT)
+        cursor = QTextCursor(self.output.document())
+        if whole_document:
+            cursor.select(QTextCursor.SelectionType.Document)
+        else:
+            cursor.movePosition(QTextCursor.MoveOperation.End)
+        cursor.setBlockFormat(block_format)
+
+    def _force_ltr_paragraphs(self) -> None:
+        """Keep the log left-aligned even when a line is Persian or Arabic.
+
+        Qt infers paragraph direction from the first strong character, so a
+        line of Persian would otherwise flip the whole line to the right —
+        taking its timestamp with it and leaving the log ragged. Pinning the
+        paragraph direction to left-to-right keeps every line starting in the
+        same place, while the Persian words inside it still shape and read
+        right-to-left, which is exactly how a terminal or a code editor
+        presents mixed text.
+        """
+        option = self.output.document().defaultTextOption()
+        option.setTextDirection(Qt.LayoutDirection.LeftToRight)
+        option.setWrapMode(QTextOption.WrapMode.WrapAnywhere)
+        self.output.document().setDefaultTextOption(option)
+        self.output.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
 
     def set_theme(self, theme: Theme) -> None:
         self._theme = theme
@@ -377,11 +428,14 @@ class TerminalView(QWidget):
         runs = self._renderer.render_runs(chunks)
         if not runs:
             return
+        document = self.output.document()
         scrollbar = self.output.verticalScrollBar()
         follow = self.auto_scroll
         previous_value = scrollbar.value()
+        blocks_before = document.blockCount()
+        added = sum(text.count("\n") for _, text in runs)
 
-        cursor = QTextCursor(self.output.document())
+        cursor = QTextCursor(document)
         cursor.movePosition(QTextCursor.MoveOperation.End)
         cursor.beginEditBlock()
         try:
@@ -391,9 +445,17 @@ class TerminalView(QWidget):
             cursor.endEditBlock()
 
         if follow:
-            scrollbar.setValue(scrollbar.maximum())
+            # Qt already keeps a bottom-anchored view pinned; setting the value
+            # again costs a redundant scroll and repaint on every single frame.
+            if scrollbar.value() != scrollbar.maximum():
+                scrollbar.setValue(scrollbar.maximum())
         else:
-            scrollbar.setValue(min(previous_value, scrollbar.maximum()))
+            # The user is reading history. Once the block cap starts trimming,
+            # the text under their eyes shifts up by however many blocks were
+            # dropped — so subtract that back out and the page stays still.
+            trimmed = max(0, blocks_before + added - document.blockCount())
+            target = min(previous_value - trimmed, scrollbar.maximum())
+            scrollbar.setValue(max(scrollbar.minimum(), target))
 
     def rerender(self) -> None:
         """Rebuild the whole view from the buffer (after a settings change)."""
@@ -404,6 +466,7 @@ class TerminalView(QWidget):
             hex_bytes_per_line=self._settings.hex_bytes_per_line,
         )
         self.output.clear()
+        self._apply_line_spacing()
         self._clear_skip_notice()
         chunks = self._buffer.chunks()
         if not chunks:
@@ -439,6 +502,9 @@ class TerminalView(QWidget):
 
     def clear(self) -> None:
         self.output.clear()
+        # clear() drops the document's blocks, and with them the block format
+        # that carries the line height.
+        self._apply_line_spacing()
         self._renderer.reset()
         self._clear_skip_notice()
 

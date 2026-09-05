@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from serial_console.core.codec import (
+    StreamDecoder,
     build_payload,
     decode_text,
     format_hex,
@@ -169,3 +170,69 @@ class TestHexFormattingFastPaths:
 
     def test_hex_dump_of_an_empty_payload(self) -> None:
         assert format_hex_dump(b"") == ""
+
+
+class TestStreamDecoding:
+    """A serial port splits multi-byte characters wherever it likes."""
+
+    PERSIAN = "دمای سنسور: ۲۴٫۸ درجه سانتی‌گراد ✓\n"
+
+    def test_every_split_position_survives(self) -> None:
+        raw = self.PERSIAN.encode()
+        for cut in range(1, len(raw)):
+            decoder = StreamDecoder("utf-8")
+            out = decoder.decode(raw[:cut]) + decoder.decode(raw[cut:])
+            assert out == self.PERSIAN, f"split at byte {cut} corrupted the text"
+
+    def test_byte_at_a_time_is_still_correct(self) -> None:
+        decoder = StreamDecoder("utf-8")
+        out = "".join(decoder.decode(bytes([byte])) for byte in self.PERSIAN.encode())
+        assert out == self.PERSIAN
+
+    def test_emoji_and_cjk(self) -> None:
+        for text in ("温度: 24.8°C\n", "status ✅ ok\n", "🚀 launch\n"):
+            raw = text.encode()
+            for cut in range(1, len(raw)):
+                decoder = StreamDecoder()
+                assert decoder.decode(raw[:cut]) + decoder.decode(raw[cut:]) == text
+
+    def test_invalid_bytes_become_replacement_characters(self) -> None:
+        decoder = StreamDecoder("utf-8")
+        assert decoder.decode(b"ok\xff\xfe done") == "ok\ufffd\ufffd done"
+
+    def test_a_dangling_partial_character_is_flushed_on_demand(self) -> None:
+        decoder = StreamDecoder("utf-8")
+        assert decoder.decode("د".encode()[:1]) == ""
+        assert decoder.flush() == "\ufffd"
+
+    def test_unknown_encoding_falls_back_to_utf8(self) -> None:
+        decoder = StreamDecoder("definitely-not-a-codec")
+        assert decoder.decode("سلام".encode()) == "سلام"
+
+    def test_legacy_encodings_work_too(self) -> None:
+        decoder = StreamDecoder("cp1256")
+        assert decoder.decode("سلام".encode("cp1256")) == "سلام"
+
+
+class TestPayloadEncoding:
+    def test_persian_is_sent_as_utf8_by_default(self) -> None:
+        payload = build_payload("سلام", hex_mode=False, line_ending=LineEnding.LF)
+        assert payload == "سلام".encode() + b"\n"
+
+    def test_the_terminal_encoding_is_honoured(self) -> None:
+        payload = build_payload(
+            "سلام", hex_mode=False, line_ending=LineEnding.NONE, encoding="cp1256"
+        )
+        assert payload == "سلام".encode("cp1256")
+
+    def test_characters_the_encoding_cannot_represent_do_not_raise(self) -> None:
+        payload = build_payload(
+            "سلام", hex_mode=False, line_ending=LineEnding.NONE, encoding="ascii"
+        )
+        assert payload == b"????"
+
+    def test_an_unknown_encoding_falls_back_instead_of_crashing(self) -> None:
+        payload = build_payload(
+            "hi", hex_mode=False, line_ending=LineEnding.NONE, encoding="nonsense"
+        )
+        assert payload == b"hi"

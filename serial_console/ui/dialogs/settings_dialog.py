@@ -182,7 +182,21 @@ class SettingsDialog(QDialog):
         self.encoding_combo = QComboBox()
         self.encoding_combo.setEditable(True)
         self.encoding_combo.addItems(
-            ["utf-8", "ascii", "latin-1", "cp1252", "utf-16-le", "shift_jis"]
+            [
+                "utf-8",      # anything modern, including Persian and emoji
+                "ascii",
+                "latin-1",
+                "cp1252",     # Windows Western
+                "cp1256",     # Windows Persian / Arabic
+                "utf-16-le",
+                "shift_jis",
+            ]
+        )
+        self.encoding_combo.setToolTip(
+            "How received bytes are turned into text — and how typed text is "
+            "turned back into bytes.\n"
+            "UTF-8 handles Persian, Arabic and emoji; choose cp1256 only for a "
+            "device that predates Unicode."
         )
         form.addRow("Text Encoding", self.encoding_combo)
         return page
@@ -203,6 +217,17 @@ class SettingsDialog(QDialog):
         self.font_size_spin = QSpinBox()
         self.font_size_spin.setRange(6, 32)
         form.addRow("Font Size", self.font_size_spin)
+
+        self.line_spacing_spin = QSpinBox()
+        self.line_spacing_spin.setRange(100, 200)
+        self.line_spacing_spin.setSingleStep(2)
+        self.line_spacing_spin.setSuffix(" %")
+        self.line_spacing_spin.setToolTip(
+            "Height of a terminal line as a percentage of the font's own height.\n"
+            "A little extra space makes dense logs easier to scan, and gives "
+            "Persian or Arabic text room for its ascenders and descenders."
+        )
+        form.addRow("Line Spacing", self.line_spacing_spin)
 
         self.columns_spin = QSpinBox()
         self.columns_spin.setRange(1, 8)
@@ -268,6 +293,7 @@ class SettingsDialog(QDialog):
         if config.appearance.font_family:
             self.font_combo.setCurrentText(config.appearance.font_family)
         self.font_size_spin.setValue(config.appearance.font_size)
+        self.line_spacing_spin.setValue(config.appearance.line_spacing)
         self.columns_spin.setValue(config.appearance.command_button_columns)
 
         self.history_spin.setValue(config.commands.history_limit)
@@ -300,6 +326,7 @@ class SettingsDialog(QDialog):
         config.appearance.theme = self.theme_combo.currentData()
         config.appearance.font_family = self.font_combo.currentFont().family()
         config.appearance.font_size = int(self.font_size_spin.value())
+        config.appearance.line_spacing = int(self.line_spacing_spin.value())
         config.appearance.command_button_columns = int(self.columns_spin.value())
 
         config.commands.history_limit = int(self.history_spin.value())
@@ -335,6 +362,7 @@ class SettingsDialog(QDialog):
         self._config.appearance.theme = defaults.appearance.theme
         self._config.appearance.font_family = defaults.appearance.font_family
         self._config.appearance.font_size = defaults.appearance.font_size
+        self._config.appearance.line_spacing = defaults.appearance.line_spacing
         self._config.appearance.command_button_columns = (
             defaults.appearance.command_button_columns
         )
